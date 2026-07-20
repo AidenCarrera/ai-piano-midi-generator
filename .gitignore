@@ -1,0 +1,48 @@
+# Virtual environments and environment files
+.venv/
+.uv-cache/
+.env
+.env.*
+
+# Python-generated files and caches
+__pycache__/
+*.py[cod]
+*$py.class
+build/
+dist/
+wheels/
+*.egg-info/
+.ruff_cache/
+.pyright/
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Project data and generated artifacts
+data/raw/
+data/processed/
+checkpoints/
+outputs/
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+*.onnx
+
+# Editors
+.idea/
+.vscode/
+*.code-workspace
+*.swp
+*.swo
+
+# Windows system files
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
