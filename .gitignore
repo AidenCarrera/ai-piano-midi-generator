@@ -1,17 +1,19 @@
-# Virtual environments and environment files
+# Local environment
 .venv/
 .uv-cache/
 .env
 .env.*
+!.env.example
 
-# Python-generated files and caches
+# Python build artifacts and caches
 __pycache__/
 *.py[cod]
-*$py.class
 build/
 dist/
 wheels/
 *.egg-info/
+
+# Project tool caches
 .ruff_cache/
 .pyright/
 .pytest_cache/
@@ -22,12 +24,14 @@ htmlcov/
 # Jupyter
 .ipynb_checkpoints/
 
-# Project data and generated artifacts
+# Local datasets and generated dataset reports
 data/raw/
 data/processed/
-data/manifests/raw_inventory.jsonl
+data/manifests/processed_inventory.jsonl
 reports/dataset_summary.json
 reports/dataset_summary.md
+
+# Model and training artifacts
 checkpoints/
 outputs/
 *.pt
@@ -36,16 +40,12 @@ outputs/
 *.safetensors
 *.onnx
 
-# Editors
+# Interrupted atomic report/manifest writes
+.*.tmp
+
+# Editors and operating-system files
 .idea/
 .vscode/
-*.code-workspace
-*.swp
-*.swo
-
-# Windows system files
 Thumbs.db
-Thumbs.db:encryptable
-ehthumbs.db
 Desktop.ini
-$RECYCLE.BIN/
+.DS_Store

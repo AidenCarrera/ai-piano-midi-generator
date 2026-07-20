@@ -70,3 +70,36 @@ Files are accepted when they parse and contain valid pitched notes on General
 MIDI piano programs 0-7. Files with usable piano notes plus drums, non-piano
 programs, or invalid notes need review. Unparseable files and files without
 valid pitched notes are rejected.
+
+## Prepare piano-only MIDI files
+
+Preview conservative piano-track selection without writing processed files:
+
+```powershell
+uv run python scripts/prepare_dataset.py --dry-run
+```
+
+After reviewing ambiguous files, write cleaned MIDI copies and the processed
+inventory:
+
+```powershell
+uv run python scripts/prepare_dataset.py
+```
+
+Existing processed MIDI files are skipped by default. Pass `--overwrite` only
+when they should be replaced. Raw files are always read-only.
+
+Automatic selection requires exactly one non-drum track using a General MIDI
+piano program (0-7). Add one JSON object per line to
+`data/manifests/track_selections.jsonl` to resolve ambiguous files:
+
+```json
+{"relative_path":"example.mid","selected_track_indices":[1]}
+{"relative_path":"two-pianos.mid","selected_track_indices":[0,2],"merge":true}
+{"relative_path":"exclude.mid","skip":true}
+```
+
+Selecting multiple tracks requires `"merge": true`; they are never merged
+automatically. Preparation preserves tick timing, durations, velocities, tempo
+events, and CC64 sustain events. It only removes non-positive-duration notes
+from explicitly or automatically selected piano tracks.
