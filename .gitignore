@@ -25,6 +25,9 @@ htmlcov/
 # Project data and generated artifacts
 data/raw/
 data/processed/
+data/manifests/raw_inventory.jsonl
+reports/dataset_summary.json
+reports/dataset_summary.md
 checkpoints/
 outputs/
 *.pt
