@@ -157,3 +157,33 @@ the preparation report only analyzes 512, 1024, and 2048-token chunk plans.
 Unsafe chunk starts receive explicit active-note and pedal-state reconstruction
 prefixes. Existing arrays are verified and reused when identical; pass
 `--overwrite` to replace differing generated arrays.
+
+## Train the decoder-only baseline
+
+Run the required checks before a full training job:
+
+```powershell
+uv run python scripts/train.py --config configs/baseline.toml --smoke-test
+uv run python scripts/train.py --config configs/baseline.toml --tiny-overfit
+```
+
+Start or resume the full plain-PyTorch baseline with:
+
+```powershell
+uv run python scripts/train.py --config configs/baseline.toml
+uv run python scripts/train.py --config configs/baseline.toml --resume checkpoints/baseline/latest.pt
+```
+
+The baseline uses a 1,024-token causal context, shifted next-token loss, AdamW,
+warmup plus cosine decay, gradient accumulation and clipping, CUDA AMP when
+available, deterministic seeds, validation, and latest/best checkpoints.
+
+Generate a constrained MIDI sample from a checkpoint:
+
+```powershell
+uv run python scripts/generate.py --checkpoint checkpoints/baseline/best.pt --output outputs/generated.mid
+```
+
+Sampling supports temperature, top-k, and top-p controls and blocks invalid
+note-off, pedal, and end-of-sequence states before decoding through the existing
+tokenizer.

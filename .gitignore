@@ -17,6 +17,8 @@ wheels/
 .ruff_cache/
 .pyright/
 .pytest_cache/
+.pytest-tmp/
+.codex-test-temp/
 .coverage
 .coverage.*
 htmlcov/
@@ -37,6 +39,10 @@ reports/tokenization_analysis.json
 reports/tokenization_analysis.md
 reports/tokenized_dataset_preparation.json
 reports/tokenized_dataset_preparation.md
+reports/baseline_training.json
+reports/training_smoke.json
+reports/tiny_overfit.json
+reports/generation.json
 
 # Model and training artifacts
 checkpoints/
