@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Iterable, Literal
 
 import torch
+import numpy as np
 from symusic.core import ScoreSecond
 from torch.nn import functional as F
 
@@ -234,6 +235,7 @@ def analyze_generation(
     mode: Literal["unconditional", "prompted"],
     seed: int,
     output_path: Path,
+    token_output_path: Path | None = None,
     source_file: str | None,
     maximum_new_tokens: int,
     minimum_new_tokens: int,
@@ -257,6 +259,13 @@ def analyze_generation(
     decoded = tokenizer.decode(sampled.tokens)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     decoded.score.dump_midi(output_path)
+    if token_output_path is not None:
+        token_output_path.parent.mkdir(parents=True, exist_ok=True)
+        np.save(
+            token_output_path,
+            tokenizer.tokens_to_ids(sampled.tokens),
+            allow_pickle=False,
+        )
     parse_valid = False
     parse_error: str | None = None
     note_count = 0
@@ -284,6 +293,9 @@ def analyze_generation(
         "seed": seed,
         "source_file": source_file,
         "output_path": output_path.as_posix(),
+        "token_array_path": (
+            token_output_path.as_posix() if token_output_path is not None else None
+        ),
         "prompt_token_count": len(prompt_tokens),
         "model_generated_token_count": model_generated_tokens,
         "total_output_token_count": len(sampled.tokens),
@@ -298,6 +310,72 @@ def analyze_generation(
         "final_state_repairs": sampled.final_state_repairs,
         "midi_parse_valid": parse_valid,
         "parse_error": parse_error,
+    }
+
+
+def summarize_generation_group(
+    records: list[dict[str, object]],
+) -> dict[str, object]:
+    """Aggregate comparable generation statistics for one sampling setting."""
+    if not records:
+        raise ValueError("Cannot summarize an empty generation group")
+    blocked_totals: Counter[str] = Counter()
+    decoder_totals: Counter[str] = Counter()
+    finalization_totals: Counter[str] = Counter()
+    durations: list[float] = []
+    notes: list[int] = []
+    pedal_events: list[int] = []
+    generated_tokens: list[int] = []
+    valid_count = 0
+    safe_eos_count = 0
+    for record in records:
+        duration = record["duration_seconds"]
+        note_count = record["note_count"]
+        cc64_count = record["cc64_event_count"]
+        generated_count = record["model_generated_token_count"]
+        if not isinstance(duration, (int, float)):
+            raise ValueError("Generation duration_seconds must be numeric")
+        if not isinstance(note_count, int):
+            raise ValueError("Generation note_count must be an integer")
+        if not isinstance(cc64_count, int):
+            raise ValueError("Generation cc64_event_count must be an integer")
+        if not isinstance(generated_count, int):
+            raise ValueError(
+                "Generation model_generated_token_count must be an integer"
+            )
+        durations.append(float(duration))
+        notes.append(note_count)
+        pedal_events.append(cc64_count)
+        generated_tokens.append(generated_count)
+        valid_count += int(bool(record["midi_parse_valid"]))
+        safe_eos_count += int(bool(record["ended_with_safe_model_eos"]))
+        for field, destination in (
+            ("blocked_invalid_events", blocked_totals),
+            ("decoder_repairs", decoder_totals),
+            ("final_state_repairs", finalization_totals),
+        ):
+            value = record[field]
+            if not isinstance(value, dict):
+                raise ValueError(f"Generation record {field} is not an object")
+            destination.update({str(name): int(count) for name, count in value.items()})
+    sample_count = len(records)
+    decoder_repair_count = decoder_totals["total"]
+    finalization_repair_count = sum(finalization_totals.values())
+    blocked_count = sum(blocked_totals.values())
+    return {
+        "sample_count": sample_count,
+        "valid_midi_count": valid_count,
+        "safe_model_eos_count": safe_eos_count,
+        "average_generated_token_count": sum(generated_tokens) / sample_count,
+        "average_duration_seconds": sum(durations) / sample_count,
+        "average_note_count": sum(notes) / sample_count,
+        "average_cc64_event_count": sum(pedal_events) / sample_count,
+        "average_decoder_repair_count": decoder_repair_count / sample_count,
+        "average_finalization_repair_count": (finalization_repair_count / sample_count),
+        "average_blocked_invalid_event_count": blocked_count / sample_count,
+        "decoder_repair_totals": dict(sorted(decoder_totals.items())),
+        "final_state_repair_totals": dict(sorted(finalization_totals.items())),
+        "blocked_invalid_event_totals": dict(sorted(blocked_totals.items())),
     }
 
 

@@ -45,6 +45,12 @@ reports/tiny_overfit.json
 reports/generation.json
 reports/baseline_evaluation.json
 reports/baseline_evaluation.md
+reports/baseline_sampling_sweep.json
+reports/baseline_sampling_sweep.md
+reports/baseline_2048_training.json
+reports/baseline_2048_generation.json
+reports/baseline_2048_sweep.json
+reports/baseline_2048_sweep.md
 
 # Model and training artifacts
 checkpoints/

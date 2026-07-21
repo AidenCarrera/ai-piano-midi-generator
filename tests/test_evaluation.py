@@ -12,6 +12,7 @@ from ai_piano_midi_generator.evaluation import (
     TOKEN_CATEGORIES,
     evaluate_test_model,
     invalid_prediction_tendencies,
+    summarize_generation_group,
     token_category,
 )
 from ai_piano_midi_generator.model import PianoTransformer, TransformerConfig
@@ -150,3 +151,41 @@ def test_invalid_minimum_generation_length_is_rejected(minimum: int) -> None:
             maximum_new_tokens=10,
             minimum_new_tokens=minimum,
         )
+
+
+def test_generation_group_summary_averages_metrics_and_nested_counts() -> None:
+    records: list[dict[str, object]] = [
+        {
+            "duration_seconds": 10.0,
+            "note_count": 20,
+            "cc64_event_count": 4,
+            "model_generated_token_count": 100,
+            "midi_parse_valid": True,
+            "ended_with_safe_model_eos": False,
+            "blocked_invalid_events": {"orphan_note_off": 2},
+            "decoder_repairs": {"total": 0},
+            "final_state_repairs": {"appended_eos": 1},
+        },
+        {
+            "duration_seconds": 20.0,
+            "note_count": 40,
+            "cc64_event_count": 6,
+            "model_generated_token_count": 80,
+            "midi_parse_valid": True,
+            "ended_with_safe_model_eos": True,
+            "blocked_invalid_events": {"orphan_note_off": 1},
+            "decoder_repairs": {"total": 2},
+            "final_state_repairs": {},
+        },
+    ]
+
+    summary = summarize_generation_group(records)
+
+    assert summary["average_duration_seconds"] == 15.0
+    assert summary["average_note_count"] == 30.0
+    assert summary["average_cc64_event_count"] == 5.0
+    assert summary["average_generated_token_count"] == 90.0
+    assert summary["average_decoder_repair_count"] == 1.0
+    assert summary["average_finalization_repair_count"] == 0.5
+    assert summary["average_blocked_invalid_event_count"] == 1.5
+    assert summary["safe_model_eos_count"] == 1

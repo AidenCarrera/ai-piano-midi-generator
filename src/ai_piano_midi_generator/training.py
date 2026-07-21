@@ -207,10 +207,17 @@ def load_checkpoint(
     if restore_rng:
         random.setstate(checkpoint["python_rng_state"])
         np.random.set_state(checkpoint["numpy_rng_state"])
-        torch.set_rng_state(checkpoint["torch_rng_state"])
+        torch_rng_state = checkpoint["torch_rng_state"]
+        if not isinstance(torch_rng_state, torch.Tensor):
+            raise ValueError("Checkpoint torch_rng_state is not a tensor")
+        torch.set_rng_state(torch_rng_state.cpu())
         cuda_state = checkpoint.get("cuda_rng_state")
         if cuda_state is not None and torch.cuda.is_available():
-            torch.cuda.set_rng_state_all(cuda_state)
+            if not isinstance(cuda_state, list) or not all(
+                isinstance(state, torch.Tensor) for state in cuda_state
+            ):
+                raise ValueError("Checkpoint cuda_rng_state is invalid")
+            torch.cuda.set_rng_state_all([state.cpu() for state in cuda_state])
     return checkpoint
 
 

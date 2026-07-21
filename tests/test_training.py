@@ -67,7 +67,12 @@ def test_checkpoint_round_trip_restores_model_and_optimizer(tmp_path: Path) -> N
             parameter.add_(1.0)
 
     loaded = load_checkpoint(
-        path, model=model, optimizer=optimizer, scaler=scaler, map_location="cpu"
+        path,
+        model=model,
+        optimizer=optimizer,
+        scaler=scaler,
+        map_location="cpu",
+        restore_rng=True,
     )
 
     assert loaded["step"] == 3

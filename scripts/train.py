@@ -91,6 +91,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     output_config = _mapping(raw.get("output"), "output")
     manifest = Path(str(data_config["manifest"]))
     context_length = int(data_config["context_length"])
+    if context_length != model_config.context_length:
+        raise ValueError("data.context_length and model.context_length must match")
     device = select_device(args.device)
     tokenizer = ExpressiveMidiTokenizer()
     if tokenizer.vocabulary_size != model_config.vocabulary_size:

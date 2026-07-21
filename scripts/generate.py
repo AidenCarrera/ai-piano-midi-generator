@@ -22,6 +22,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--checkpoint", type=Path, required=True)
     parser.add_argument("--output", type=Path, default=Path("outputs/generated.mid"))
     parser.add_argument("--report", type=Path, default=Path("reports/generation.json"))
+    parser.add_argument("--token-output", type=Path)
     parser.add_argument("--prompt-array", type=Path)
     parser.add_argument("--prompt-midi", type=Path)
     parser.add_argument("--prompt-length", type=int, default=64)
@@ -85,10 +86,20 @@ def main(argv: Sequence[str] | None = None) -> int:
     decoded = tokenizer.decode(sampled.tokens)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     decoded.score.dump_midi(args.output)
+    if args.token_output is not None:
+        args.token_output.parent.mkdir(parents=True, exist_ok=True)
+        np.save(
+            args.token_output,
+            tokenizer.tokens_to_ids(sampled.tokens),
+            allow_pickle=False,
+        )
     reparsed = ScoreTick.from_file(args.output)
     report: dict[str, object] = {
         "checkpoint": args.checkpoint.as_posix(),
         "output": args.output.as_posix(),
+        "token_output": (
+            args.token_output.as_posix() if args.token_output is not None else None
+        ),
         "prompt_token_count": len(prompt_tokens),
         "generated_total_token_count": len(sampled.tokens),
         "minimum_new_tokens": args.min_new_tokens,

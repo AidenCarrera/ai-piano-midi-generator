@@ -1,0 +1,41 @@
+[data]
+manifest = "data/manifests/tokenized_dataset.jsonl"
+context_length = 2048
+
+[model]
+vocabulary_size = 392
+context_length = 2048
+embedding_size = 384
+layer_count = 6
+head_count = 6
+feed_forward_size = 1536
+dropout = 0.10
+
+[training]
+batch_size = 1
+gradient_accumulation_steps = 8
+maximum_steps = 6000
+learning_rate = 0.0003
+minimum_learning_rate = 0.00003
+warmup_steps = 250
+weight_decay = 0.10
+gradient_clip_norm = 1.0
+dropout = 0.10
+evaluation_interval = 125
+evaluation_batches = 40
+checkpoint_interval = 250
+log_interval = 10
+seed = 2026
+data_loader_workers = 0
+amp = true
+
+[output]
+checkpoint_directory = "checkpoints/baseline_2048"
+training_report = "reports/baseline_2048_training.json"
+
+[sampling]
+maximum_new_tokens = 2048
+temperature = 0.90
+top_k = 50
+top_p = 0.95
+seed = 2026

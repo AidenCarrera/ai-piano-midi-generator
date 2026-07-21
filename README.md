@@ -178,6 +178,19 @@ The baseline uses a 1,024-token causal context, shifted next-token loss, AdamW,
 warmup plus cosine decay, gradient accumulation and clipping, CUDA AMP when
 available, deterministic seeds, validation, and latest/best checkpoints.
 
+For uninterrupted 2,048-token generation, train the separate long-context
+baseline from scratch. It uses 2,048-token dataset chunks and eight-way
+gradient accumulation so its effective token batch remains comparable:
+
+```powershell
+uv run python scripts/train.py --config configs/baseline_2048.toml --smoke-test
+uv run python scripts/train.py --config configs/baseline_2048.toml --tiny-overfit
+uv run python scripts/train.py --config configs/baseline_2048.toml
+```
+
+Its checkpoints are written under `checkpoints/baseline_2048` and do not
+replace the original 1,024-context baseline.
+
 Generate a constrained MIDI sample from a checkpoint:
 
 ```powershell
