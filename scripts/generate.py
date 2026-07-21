@@ -26,6 +26,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--prompt-midi", type=Path)
     parser.add_argument("--prompt-length", type=int, default=64)
     parser.add_argument("--max-new-tokens", type=int, default=256)
+    parser.add_argument("--min-new-tokens", type=int, default=0)
     parser.add_argument("--temperature", type=float, default=0.95)
     parser.add_argument("--top-k", type=int, default=40)
     parser.add_argument("--top-p", type=float, default=0.95)
@@ -74,6 +75,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         tokenizer,
         prompt_tokens=prompt_tokens,
         maximum_new_tokens=args.max_new_tokens,
+        minimum_new_tokens=args.min_new_tokens,
         temperature=args.temperature,
         top_k=args.top_k,
         top_p=args.top_p,
@@ -89,6 +91,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "output": args.output.as_posix(),
         "prompt_token_count": len(prompt_tokens),
         "generated_total_token_count": len(sampled.tokens),
+        "minimum_new_tokens": args.min_new_tokens,
         "note_count": sum(len(track.notes) for track in reparsed.tracks),
         "cc64_event_count": sum(
             1

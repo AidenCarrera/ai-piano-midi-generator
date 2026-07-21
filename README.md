@@ -187,3 +187,15 @@ uv run python scripts/generate.py --checkpoint checkpoints/baseline/best.pt --ou
 Sampling supports temperature, top-k, and top-p controls and blocks invalid
 note-off, pedal, and end-of-sequence states before decoding through the existing
 tokenizer.
+
+Evaluate the best checkpoint once on the held-out test split and generate
+matched unconditional and prompted samples with:
+
+```powershell
+uv run python scripts/evaluate.py
+```
+
+The evaluation writes JSON and Markdown reports under `reports/` and MIDI
+samples under `outputs/baseline_evaluation/`. Use `--min-new-tokens` to prevent
+premature EOS during generation. The command defaults to
+`checkpoints/baseline/best.pt`; it does not load `latest.pt`.

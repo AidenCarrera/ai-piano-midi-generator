@@ -63,28 +63,51 @@ def _advance_state(state: _GenerationState, token: str, invalid: Counter[str]) -
 def _constraint_mask(
     tokenizer: ExpressiveMidiTokenizer,
     state: _GenerationState,
-    blocked: Counter[str],
     device: torch.device,
+    *,
+    allow_eos: bool,
 ) -> torch.Tensor:
     allowed = torch.ones(tokenizer.vocabulary_size, dtype=torch.bool, device=device)
     allowed[tokenizer.token_to_id[BOS_TOKEN]] = False
     if not state.velocity_selected:
         for pitch in range(128):
             allowed[tokenizer.token_to_id[f"NOTE_ON_{pitch}"]] = False
-        blocked["note_on_without_velocity"] += 1
     for pitch in range(128):
         if state.active_notes.get(pitch, 0) <= 0:
             allowed[tokenizer.token_to_id[f"NOTE_OFF_{pitch}"]] = False
     if state.pedal_down:
         allowed[tokenizer.token_to_id[PEDAL_DOWN_TOKEN]] = False
-        blocked["duplicate_pedal_down"] += 1
     else:
         allowed[tokenizer.token_to_id[PEDAL_UP_TOKEN]] = False
-        blocked["pedal_up_while_up"] += 1
     if any(state.active_notes.values()) or state.pedal_down:
         allowed[tokenizer.token_to_id[EOS_TOKEN]] = False
-        blocked["unsafe_eos"] += 1
+    if not allow_eos:
+        allowed[tokenizer.token_to_id[EOS_TOKEN]] = False
     return allowed
+
+
+def _blocked_reasons(
+    token: str, state: _GenerationState, *, allow_eos: bool
+) -> tuple[str, ...]:
+    reasons: list[str] = []
+    if token == BOS_TOKEN:
+        reasons.append("unexpected_bos")
+    elif token.startswith("NOTE_ON_") and not state.velocity_selected:
+        reasons.append("note_on_without_velocity")
+    elif token.startswith("NOTE_OFF_"):
+        pitch = int(token.removeprefix("NOTE_OFF_"))
+        if state.active_notes.get(pitch, 0) <= 0:
+            reasons.append("orphan_note_off")
+    elif token == PEDAL_DOWN_TOKEN and state.pedal_down:
+        reasons.append("duplicate_pedal_down")
+    elif token == PEDAL_UP_TOKEN and not state.pedal_down:
+        reasons.append("pedal_up_while_up")
+    elif token == EOS_TOKEN:
+        if any(state.active_notes.values()) or state.pedal_down:
+            reasons.append("unsafe_eos")
+        if not allow_eos:
+            reasons.append("minimum_length_eos")
+    return tuple(reasons)
 
 
 def _sample_index(
@@ -126,6 +149,7 @@ def sample_tokens(
     *,
     prompt_tokens: tuple[str, ...] = (BOS_TOKEN,),
     maximum_new_tokens: int = 512,
+    minimum_new_tokens: int = 0,
     temperature: float = 1.0,
     top_k: int | None = 40,
     top_p: float | None = 0.95,
@@ -135,6 +159,10 @@ def sample_tokens(
     """Sample tokens and close active musical state before returning."""
     if maximum_new_tokens <= 0:
         raise ValueError("maximum_new_tokens must be positive")
+    if not 0 <= minimum_new_tokens <= maximum_new_tokens:
+        raise ValueError(
+            "minimum_new_tokens must be between zero and maximum_new_tokens"
+        )
     device = next(model.parameters()).device
     state = _GenerationState(active_notes=defaultdict(int))
     prompt_invalid: Counter[str] = Counter()
@@ -152,7 +180,7 @@ def sample_tokens(
     generator.manual_seed(seed)
     model.eval()
 
-    for _ in range(maximum_new_tokens):
+    for generated_index in range(maximum_new_tokens):
         if state.ended:
             break
         ids = torch.tensor(
@@ -163,7 +191,18 @@ def sample_tokens(
         logits, _ = model(ids.unsqueeze(0))
         next_logits = logits[0, -1].float()
         if constrain_states:
-            allowed = _constraint_mask(tokenizer, state, blocked, device)
+            allow_eos = generated_index >= minimum_new_tokens
+            allowed = _constraint_mask(
+                tokenizer,
+                state,
+                device,
+                allow_eos=allow_eos,
+            )
+            unconstrained_token = tokenizer.vocabulary[int(next_logits.argmax().item())]
+            for reason in _blocked_reasons(
+                unconstrained_token, state, allow_eos=allow_eos
+            ):
+                blocked[reason] += 1
             next_logits = next_logits.masked_fill(~allowed, -torch.inf)
         next_id = _sample_index(
             next_logits,

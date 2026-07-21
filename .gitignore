@@ -43,6 +43,8 @@ reports/baseline_training.json
 reports/training_smoke.json
 reports/tiny_overfit.json
 reports/generation.json
+reports/baseline_evaluation.json
+reports/baseline_evaluation.md
 
 # Model and training artifacts
 checkpoints/
