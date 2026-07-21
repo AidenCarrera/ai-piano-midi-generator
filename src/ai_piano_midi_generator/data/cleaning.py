@@ -9,7 +9,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Literal
 
-from symusic.core import ScoreTick, TrackTick
+from symusic.core import ControlChangeTick, ScoreTick, TrackTick
 
 from ai_piano_midi_generator.data.inspection import sha256_file
 
@@ -91,6 +91,16 @@ class CleaningRecord:
         result = asdict(self)
         result["invalid_notes_removed_count"] = len(self.invalid_notes_removed)
         return result
+
+
+@dataclass(frozen=True, slots=True)
+class _RawMidiTrackEvents:
+    """Minimal physical-track data needed to recover omitted CC64 events."""
+
+    index: int
+    name: str
+    note_counts_by_channel: tuple[tuple[int, int], ...]
+    cc64_events: tuple[tuple[int, int], ...]
 
 
 def _normalized_relative_path(value: str) -> str:
@@ -410,6 +420,225 @@ def _merge_tracks(tracks: list[TrackTick]) -> TrackTick:
     return merged
 
 
+def _read_variable_length(data: bytes, position: int) -> tuple[int, int]:
+    value = 0
+    for _ in range(4):
+        if position >= len(data):
+            raise ValueError("Truncated MIDI variable-length value")
+        byte = data[position]
+        position += 1
+        value = (value << 7) | (byte & 0x7F)
+        if byte & 0x80 == 0:
+            return value, position
+    raise ValueError("Invalid MIDI variable-length value")
+
+
+def _parse_raw_midi_track(data: bytes, track_index: int) -> _RawMidiTrackEvents:
+    position = 0
+    absolute_time = 0
+    running_status: int | None = None
+    name = ""
+    note_counts: Counter[int] = Counter()
+    cc64_events: list[tuple[int, int]] = []
+
+    while position < len(data):
+        delta, position = _read_variable_length(data, position)
+        absolute_time += delta
+        if position >= len(data):
+            raise ValueError(f"Truncated MIDI event in physical track {track_index}")
+
+        first_byte = data[position]
+        if first_byte & 0x80:
+            status = first_byte
+            position += 1
+            if status < 0xF0:
+                running_status = status
+        elif running_status is not None:
+            status = running_status
+        else:
+            raise ValueError(
+                f"Running status without channel status in physical track {track_index}"
+            )
+
+        if status == 0xFF:
+            if position >= len(data):
+                raise ValueError(
+                    f"Truncated meta event in physical track {track_index}"
+                )
+            meta_type = data[position]
+            position += 1
+            length, position = _read_variable_length(data, position)
+            end = position + length
+            if end > len(data):
+                raise ValueError(
+                    f"Truncated meta payload in physical track {track_index}"
+                )
+            if meta_type == 0x03 and not name:
+                name = data[position:end].decode("latin-1", errors="replace")
+            position = end
+            continue
+
+        if status in (0xF0, 0xF7):
+            length, position = _read_variable_length(data, position)
+            position += length
+            if position > len(data):
+                raise ValueError(
+                    f"Truncated SysEx payload in physical track {track_index}"
+                )
+            continue
+
+        event_type = status & 0xF0
+        channel = status & 0x0F
+        if event_type not in {
+            0x80,
+            0x90,
+            0xA0,
+            0xB0,
+            0xC0,
+            0xD0,
+            0xE0,
+        }:
+            raise ValueError(
+                f"Unsupported MIDI status 0x{status:02X} in physical track "
+                f"{track_index}"
+            )
+        event_size = 1 if event_type in (0xC0, 0xD0) else 2
+        end = position + event_size
+        if end > len(data):
+            raise ValueError(f"Truncated channel event in physical track {track_index}")
+        event_data = data[position:end]
+        position = end
+
+        if event_type == 0x90 and event_data[1] > 0:
+            note_counts[channel] += 1
+        elif event_type == 0xB0 and event_data[0] == 64:
+            cc64_events.append((absolute_time, int(event_data[1])))
+
+    return _RawMidiTrackEvents(
+        index=track_index,
+        name=name,
+        note_counts_by_channel=tuple(sorted(note_counts.items())),
+        cc64_events=tuple(cc64_events),
+    )
+
+
+def _read_raw_midi_tracks(path: Path) -> tuple[_RawMidiTrackEvents, ...]:
+    data = path.read_bytes()
+    if len(data) < 14 or data[:4] != b"MThd":
+        raise ValueError("Missing MIDI header")
+    header_length = int.from_bytes(data[4:8], "big")
+    if header_length < 6 or 8 + header_length > len(data):
+        raise ValueError("Invalid MIDI header length")
+    track_count = int.from_bytes(data[10:12], "big")
+    position = 8 + header_length
+    tracks: list[_RawMidiTrackEvents] = []
+    for track_index in range(track_count):
+        if position + 8 > len(data) or data[position : position + 4] != b"MTrk":
+            raise ValueError(f"Missing physical MIDI track {track_index}")
+        track_length = int.from_bytes(data[position + 4 : position + 8], "big")
+        start = position + 8
+        end = start + track_length
+        if end > len(data):
+            raise ValueError(f"Truncated physical MIDI track {track_index}")
+        tracks.append(_parse_raw_midi_track(data[start:end], track_index))
+        position = end
+    return tuple(tracks)
+
+
+def _raw_cc64_sources_for_selected_tracks(
+    source_path: Path, selected_tracks: list[TrackTick]
+) -> list[tuple[str, list[tuple[int, int]]]]:
+    """Recover CC64 only from physical tracks matching the selected tracks."""
+    selected_counts_by_name: dict[str, list[int]] = {}
+    for track in selected_tracks:
+        selected_counts_by_name.setdefault(track.name, []).append(len(track.notes))
+
+    sources: list[tuple[str, list[tuple[int, int]]]] = []
+    for raw_track in _read_raw_midi_tracks(source_path):
+        physical_counts = sorted(
+            note_count
+            for _, note_count in raw_track.note_counts_by_channel
+            if note_count > 0
+        )
+        selected_counts = sorted(selected_counts_by_name.get(raw_track.name, []))
+        if not raw_track.cc64_events or not physical_counts:
+            continue
+        if len(physical_counts) > len(selected_counts):
+            continue
+
+        remaining_selected_counts = selected_counts.copy()
+        for physical_count in physical_counts:
+            closest = min(
+                range(len(remaining_selected_counts)),
+                key=lambda index: abs(
+                    remaining_selected_counts[index] - physical_count
+                ),
+                default=None,
+            )
+            if closest is None:
+                break
+            selected_count = remaining_selected_counts[closest]
+            tolerance = max(physical_count, selected_count) // 100
+            if abs(selected_count - physical_count) > tolerance:
+                break
+            remaining_selected_counts.pop(closest)
+        else:
+            sources.append(
+                (
+                    f"raw_physical_track:{raw_track.index}",
+                    list(raw_track.cc64_events),
+                )
+            )
+    return sources
+
+
+def _reconcile_cc64_controls(
+    output_track: TrackTick,
+    sources: list[tuple[str, list[tuple[int, int]]]],
+) -> tuple[int, list[str]]:
+    """Merge pedal streams without duplicate or simultaneous conflicting events."""
+    chosen_by_time: dict[int, tuple[int, str]] = {}
+    duplicate_count = 0
+    conflict_times: set[int] = set()
+
+    for source_name, events in sources:
+        source_by_time: dict[int, int] = {}
+        for time, value in events:
+            previous = source_by_time.get(time)
+            if previous is not None:
+                if previous == value:
+                    duplicate_count += 1
+                else:
+                    conflict_times.add(time)
+            source_by_time[time] = value
+
+        for time, value in source_by_time.items():
+            existing = chosen_by_time.get(time)
+            if existing is None:
+                chosen_by_time[time] = (value, source_name)
+            elif existing[0] == value:
+                duplicate_count += 1
+            else:
+                conflict_times.add(time)
+
+    output_track.controls.filter(lambda control: control.number != 64, inplace=True)
+    for time, (value, _) in sorted(chosen_by_time.items()):
+        output_track.controls.append(ControlChangeTick(time, 64, value))
+    output_track.controls.sort()
+
+    warnings: list[str] = []
+    if duplicate_count:
+        warnings.append(f"deduplicated_cc64_events:{duplicate_count}")
+    if conflict_times:
+        preview = sorted(conflict_times)[:10]
+        warnings.append(
+            "resolved_cc64_conflicts:"
+            f"{len(conflict_times)}:ticks_preview:{preview}:"
+            "within_stream_last_event_then_source_precedence"
+        )
+    return len(chosen_by_time), warnings
+
+
 def _safe_child(root: Path, relative_path: str) -> Path:
     root = root.resolve()
     child = (root / Path(relative_path)).resolve()
@@ -534,27 +763,63 @@ def clean_midi_file(
         else:
             output_track = cleaned_tracks[0]
 
-        for index in decision.cc64_indices:
-            for control in score.tracks[index].controls:
-                if control.number == 64:
-                    output_track.controls.append(control.copy())
-        output_track.controls.sort()
+        cc64_sources = [
+            (
+                f"selected_track:{index}",
+                [
+                    (int(control.time), int(control.value))
+                    for control in cleaned_track.controls
+                    if control.number == 64
+                ],
+            )
+            for index, cleaned_track in zip(
+                decision.selected_indices, cleaned_tracks, strict=True
+            )
+        ]
+        cc64_sources.extend(
+            (
+                f"cc64_carrier_track:{index}",
+                [
+                    (int(control.time), int(control.value))
+                    for control in score.tracks[index].controls
+                    if control.number == 64
+                ],
+            )
+            for index in decision.cc64_indices
+        )
+        if decision.merge:
+            try:
+                raw_sources = _raw_cc64_sources_for_selected_tracks(
+                    source_path,
+                    [score.tracks[index] for index in decision.selected_indices],
+                )
+            except (OSError, ValueError) as exc:
+                record.warnings.append(
+                    f"raw_cc64_recovery_unavailable:{type(exc).__name__}:{exc}"
+                )
+            else:
+                exposed_events = {
+                    event for _, events in cc64_sources for event in events
+                }
+                recovered_count = sum(
+                    1
+                    for _, events in raw_sources
+                    for event in events
+                    if event not in exposed_events
+                )
+                if recovered_count:
+                    cc64_sources.extend(raw_sources)
+                    record.warnings.append(
+                        f"recovered_raw_cc64_events:{recovered_count}"
+                    )
+
+        record.pedal_events_kept, cc64_warnings = _reconcile_cc64_controls(
+            output_track, cc64_sources
+        )
+        record.warnings.extend(cc64_warnings)
         cleaned_score.tracks.append(output_track)
 
         record.notes_kept = sum(len(track.notes) for track in cleaned_tracks)
-        record.pedal_events_kept = sum(
-            1
-            for track in cleaned_tracks
-            for control in track.controls
-            if control.number == 64
-        )
-        record.pedal_events_kept += sum(
-            1
-            for index in decision.cc64_indices
-            for control in score.tracks[index].controls
-            if control.number == 64
-        )
-
         if output_path.exists() and not overwrite:
             record.status = "skipped"
             record.warnings.append("output_exists_use_overwrite")

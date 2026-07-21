@@ -14,7 +14,7 @@
 {"relative_path":"Mad About the Boy.mid","selected_track_indices":[1,2],"merge":true}
 {"relative_path":"Mean to Me (Doug McKenzie).mid","selected_track_indices":[0]}
 {"relative_path":"Moon and Sand.mid","selected_track_indices":[1,2,3],"merge":true}
-{"relative_path":"My Old FlameGM.mid","reject":true,"reason":"Appears to combine two piano parts and has no usable sustain-pedal data; excluded pending further review."}
+{"relative_path":"My Old FlameGM.mid","selected_track_indices":[0,1],"merge":true}
 {"relative_path":"oldfashionedtrio.mid","reject":true,"reason":"Contains two distinct piano parts; unsuitable as a single-piano training performance."}
 {"relative_path":"Out of Nowhere 2.mid","selected_track_indices":[1,2],"merge":true}
 {"relative_path":"shinystockings.mid","selected_track_indices":[2]}

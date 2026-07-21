@@ -9,6 +9,7 @@ from symusic.core import ScoreTick
 
 from ai_piano_midi_generator.data.cleaning import (
     TrackSelectionOverride,
+    _read_raw_midi_tracks,
     clean_midi_file,
     prepare_dataset,
     select_piano_tracks,
@@ -48,6 +49,55 @@ def raw_record(path: Path, raw_root: Path) -> dict[str, object]:
         "relative_path": path.relative_to(raw_root).as_posix(),
         "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
     }
+
+
+def variable_length(value: int) -> bytes:
+    encoded = [value & 0x7F]
+    value >>= 7
+    while value:
+        encoded.append((value & 0x7F) | 0x80)
+        value >>= 7
+    return bytes(reversed(encoded))
+
+
+def write_split_channel_piano_with_cc64(path: Path) -> None:
+    """Write a physical track Symusic splits while dropping its CC64-only channel."""
+    name = b"Split Piano"
+    track = b"".join(
+        [
+            b"\x00\xff\x03" + variable_length(len(name)) + name,
+            b"\x00\xc7\x00",
+            b"\x00\xc8\x00",
+            b"\x00\x97\x3c\x5a",
+            b"\x00\x98\x30\x50",
+            b"\x00\xb0\x40\x7f",
+            variable_length(240) + b"\x87\x3c\x00",
+            b"\x00\x88\x30\x00",
+            variable_length(240) + b"\xb0\x40\x00",
+            b"\x00\xff\x2f\x00",
+        ]
+    )
+    header = b"MThd\x00\x00\x00\x06\x00\x00\x00\x01\x01\xe0"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(header + b"MTr" + b"k" + len(track).to_bytes(4, "big") + track)
+
+
+def write_legacy_running_status_midi(path: Path) -> None:
+    name = b"Legacy Piano"
+    track = b"".join(
+        [
+            b"\x00\xff\x03" + variable_length(len(name)) + name,
+            b"\x00\x98\x30\x50",
+            b"\x00\xf0\x02\x01\xf7",
+            b"\x00\x32\x50",
+            b"\x00\xb0\x40\x7f",
+            variable_length(480) + b"\x40\x00",
+            b"\x00\xff\x2f\x00",
+        ]
+    )
+    header = b"MThd\x00\x00\x00\x06\x00\x00\x00\x01\x01\xe0"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(header + b"MTrk" + len(track).to_bytes(4, "big") + track)
 
 
 def test_automatic_piano_selection_removes_percussion_and_preserves_events(
@@ -155,7 +205,90 @@ def test_multiple_tracks_merge_only_with_explicit_merge_override(
     assert merged.status == "processed"
     assert len(cleaned.tracks) == 1
     assert sorted(note.pitch for note in cleaned.tracks[0].notes) == [48, 60]
-    assert merged.pedal_events_kept == 4
+    assert merged.pedal_events_kept == 2
+    assert [
+        (control.time, control.value)
+        for control in cleaned.tracks[0].controls
+        if control.number == 64
+    ] == [(300, 127), (700, 0)]
+    assert "deduplicated_cc64_events:2" in merged.warnings
+
+
+def test_merge_preserves_unique_cc64_and_resolves_same_tick_conflicts(
+    tmp_path: Path,
+) -> None:
+    raw_root = tmp_path / "raw"
+    output_root = tmp_path / "processed"
+    source = raw_root / "pedal-merge.mid"
+    upper = piano_track("Upper")
+    lower = piano_track("Lower", pitch=48)
+    lower.controls.clear()
+    lower.controls.append(ControlChange(300, 64, 127))
+    lower.controls.append(ControlChange(500, 64, 80))
+    lower.controls.append(ControlChange(700, 64, 64))
+    make_score(source, [upper, lower])
+
+    result = clean_midi_file(
+        raw_record=raw_record(source, raw_root),
+        input_root=raw_root,
+        output_root=output_root,
+        override=TrackSelectionOverride("pedal-merge.mid", (0, 1), merge=True),
+    )
+
+    cleaned = ScoreTick.from_file(output_root / "pedal-merge.mid")
+    assert result.status == "processed"
+    assert result.pedal_events_kept == 3
+    assert [
+        (control.time, control.value)
+        for control in cleaned.tracks[0].controls
+        if control.number == 64
+    ] == [(300, 127), (500, 80), (700, 0)]
+    assert "deduplicated_cc64_events:1" in result.warnings
+    assert any(
+        warning.startswith("resolved_cc64_conflicts:1:ticks_preview:[700]")
+        for warning in result.warnings
+    )
+
+
+def test_merge_recovers_cc64_from_split_physical_midi_track(tmp_path: Path) -> None:
+    raw_root = tmp_path / "raw"
+    output_root = tmp_path / "processed"
+    source = raw_root / "split-piano.mid"
+    write_split_channel_piano_with_cc64(source)
+    parsed = ScoreTick.from_file(source)
+    assert len(parsed.tracks) == 2
+    assert all(not track.controls for track in parsed.tracks)
+
+    result = clean_midi_file(
+        raw_record=raw_record(source, raw_root),
+        input_root=raw_root,
+        output_root=output_root,
+        override=TrackSelectionOverride("split-piano.mid", (0, 1), merge=True),
+    )
+
+    cleaned = ScoreTick.from_file(output_root / "split-piano.mid")
+    assert result.status == "processed"
+    assert result.pedal_events_kept == 2
+    assert [
+        (control.time, control.value)
+        for control in cleaned.tracks[0].controls
+        if control.number == 64
+    ] == [(0, 127), (480, 0)]
+    assert "recovered_raw_cc64_events:2" in result.warnings
+
+
+def test_raw_cc64_parser_accepts_legacy_running_status_after_sysex(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "legacy.mid"
+    write_legacy_running_status_midi(source)
+
+    tracks = _read_raw_midi_tracks(source)
+
+    assert len(tracks) == 1
+    assert tracks[0].name == "Legacy Piano"
+    assert tracks[0].note_counts_by_channel == ((8, 2),)
+    assert tracks[0].cc64_events == ((0, 127), (480, 0))
 
 
 def test_manual_cc64_carrier_preserves_controls_without_unrelated_notes(
