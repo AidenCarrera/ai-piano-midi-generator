@@ -133,3 +133,27 @@ round-trip validation only.
 Use `--timing-resolution`, `--maximum-time-shift`, `--velocity-bins`, and
 `--decode-tempo` to evaluate other settings. The command writes
 `reports/tokenization_analysis.json` and `reports/tokenization_analysis.md`.
+
+## Prepare grouped token arrays and splits
+
+Create deterministic, leakage-resistant train, validation, and test assignments
+and one compact NumPy token array per complete performance:
+
+```powershell
+uv run python scripts/prepare_tokenized_dataset.py
+```
+
+The command groups related takes before assigning an 80/10/10 split with seed
+`2026`. Manual filename-family decisions live in the versionable
+`data/manifests/tune_group_overrides.jsonl` file:
+
+```json
+{"relative_path":"alternate-name.mid","tune_group":"canonical-tune-name"}
+```
+
+Generated arrays are written under `data/processed/tokens`, with metadata in
+`data/manifests/tokenized_dataset.jsonl`. Complete performances remain separate;
+the preparation report only analyzes 512, 1024, and 2048-token chunk plans.
+Unsafe chunk starts receive explicit active-note and pedal-state reconstruction
+prefixes. Existing arrays are verified and reused when identical; pass
+`--overwrite` to replace differing generated arrays.

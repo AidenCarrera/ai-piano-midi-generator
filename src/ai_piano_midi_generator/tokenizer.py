@@ -8,6 +8,7 @@ from math import floor
 from pathlib import Path
 from typing import Literal
 
+import numpy as np
 from symusic.core import (
     ControlChangeTick,
     NoteTick,
@@ -335,6 +336,28 @@ class ExpressiveMidiTokenizer:
     def encode_file(self, path: Path) -> EncodedSequence:
         """Parse and encode a MIDI file in elapsed seconds."""
         return self.encode(ScoreSecond.from_file(path))
+
+    def tokens_to_ids(self, tokens: tuple[str, ...] | list[str]) -> np.ndarray:
+        """Convert tokens to the smallest supported compact integer array."""
+        dtype = np.uint16 if self.vocabulary_size <= 65_536 else np.uint32
+        try:
+            return np.asarray(
+                [self.token_to_id[token] for token in tokens], dtype=dtype
+            )
+        except KeyError as exc:
+            raise ValueError(f"Unknown token: {exc.args[0]}") from exc
+
+    def ids_to_tokens(self, token_ids: np.ndarray) -> tuple[str, ...]:
+        """Convert a one-dimensional integer token array back to token strings."""
+        if token_ids.ndim != 1:
+            raise ValueError("Token ID array must be one-dimensional")
+        result: list[str] = []
+        for token_id_value in token_ids:
+            token_id = int(token_id_value)
+            if not 0 <= token_id < self.vocabulary_size:
+                raise ValueError(f"Token ID is out of range: {token_id}")
+            result.append(self.vocabulary[token_id])
+        return tuple(result)
 
     def decode(self, tokens: tuple[str, ...] | list[str]) -> DecodedSequence:
         """Decode tokens into a valid single-track, fixed-tempo MIDI score."""

@@ -28,12 +28,15 @@ htmlcov/
 data/raw/
 data/processed/
 data/manifests/processed_inventory.jsonl
+data/manifests/tokenized_dataset.jsonl
 reports/dataset_summary.json
 reports/dataset_summary.md
 reports/final_dataset_validation.json
 reports/final_dataset_validation.md
 reports/tokenization_analysis.json
 reports/tokenization_analysis.md
+reports/tokenized_dataset_preparation.json
+reports/tokenized_dataset_preparation.md
 
 # Model and training artifacts
 checkpoints/
