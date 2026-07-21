@@ -1,1 +1,35 @@
-
+{"relative_path":"afine-1.MID","selected_track_indices":[1,2],"cc64_track_indices":[0],"merge":true}
+{"relative_path":"AfterYou.mid","selected_track_indices":[1,2],"merge":true}
+{"relative_path":"Alabama.mid","selected_track_indices":[0,1],"merge":true}
+{"relative_path":"ARemark.mid","selected_track_indices":[1,2],"merge":true}
+{"relative_path":"Ask Me Now 2.mid","selected_track_indices":[0,1],"merge":true}
+{"relative_path":"BrazilianSuite.mid","selected_track_indices":[1,2,3],"merge":true}
+{"relative_path":"Come Rain or Come Shine duo.mid","reject":true,"reason":"Contains a separate solo line combined with an accompaniment part; unsuitable as a single-piano training performance."}
+{"relative_path":"Have You Met - duet.mid","reject":true,"reason":"Contains a separate solo line combined with an accompaniment part; unsuitable as a single-piano training performance."}
+{"relative_path":"If Ever I Should Leave You.MID","reject":true,"reason":"No General MIDI piano track; the only note track uses program 11 and its identity is unclear."}
+{"relative_path":"IfIwere.mid","selected_track_indices":[1,2],"merge":true}
+{"relative_path":"ImOldFash.mid","selected_track_indices":[0]}
+{"relative_path":"INeverKnew.mid","selected_track_indices":[1,2],"merge":true}
+{"relative_path":"laura.mid","selected_track_indices":[1,2],"merge":true}
+{"relative_path":"Mad About the Boy.mid","selected_track_indices":[1,2],"merge":true}
+{"relative_path":"Mean to Me (Doug McKenzie).mid","selected_track_indices":[0]}
+{"relative_path":"Moon and Sand.mid","selected_track_indices":[1,2,3],"merge":true}
+{"relative_path":"My Old FlameGM.mid","reject":true,"reason":"Appears to combine two piano parts and has no usable sustain-pedal data; excluded pending further review."}
+{"relative_path":"oldfashionedtrio.mid","reject":true,"reason":"Contains two distinct piano parts; unsuitable as a single-piano training performance."}
+{"relative_path":"Out of Nowhere 2.mid","selected_track_indices":[1,2],"merge":true}
+{"relative_path":"shinystockings.mid","selected_track_indices":[2]}
+{"relative_path":"simplelife.mid","reject":true,"reason":"Two unnamed full-range piano tracks overlap and cannot be identified confidently as split parts or alternate performances."}
+{"relative_path":"Since We Met Jazz Kit.mid","selected_track_indices":[0]}
+{"relative_path":"SoInlove - trio version.mid","selected_track_indices":[1,2,3],"merge":true}
+{"relative_path":"soon.mid","selected_track_indices":[1,6],"merge":true}
+{"relative_path":"Spartacus- 2 pianos.mid","reject":true,"reason":"Contains two distinct piano parts; unsuitable as a single-piano training performance."}
+{"relative_path":"Surrey medley.mid","selected_track_indices":[0,1],"merge":true}
+{"relative_path":"Sweet1.mid","selected_track_indices":[0]}
+{"relative_path":"There will never be another you.mid","selected_track_indices":[0]}
+{"relative_path":"These Foolish Things.MID","reject":true,"reason":"No General MIDI piano track; the only note track uses program 12 and its identity is unclear."}
+{"relative_path":"Waltse For Dave.mid","selected_track_indices":[1,2,3],"merge":true}
+{"relative_path":"What is this thing - solo.mid","selected_track_indices":[0,1],"merge":true}
+{"relative_path":"When I Fall in Love.MID","selected_track_indices":[1,2],"cc64_track_indices":[0],"merge":true}
+{"relative_path":"You Do Something To me.MID","selected_track_indices":[2,3],"cc64_track_indices":[0],"merge":true}
+{"relative_path":"You Stepped Out of a Dream (Doug McKenzie).mid","selected_track_indices":[0,1],"merge":true}
+{"relative_path":"Whilewereyoung.mid","reject":true,"reason":"Malformed MIDI rejected by Symusic because it contains velocity value 176."}

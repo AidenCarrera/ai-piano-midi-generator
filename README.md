@@ -80,7 +80,7 @@ uv run python scripts/prepare_dataset.py --dry-run
 ```
 
 After reviewing ambiguous files, write cleaned MIDI copies and the processed
-inventory:
+inventory, then validate every final output:
 
 ```powershell
 uv run python scripts/prepare_dataset.py
@@ -96,10 +96,21 @@ piano program (0-7). Add one JSON object per line to
 ```json
 {"relative_path":"example.mid","selected_track_indices":[1]}
 {"relative_path":"two-pianos.mid","selected_track_indices":[0,2],"merge":true}
+{"relative_path":"pedal-carrier.mid","selected_track_indices":[1,2],"cc64_track_indices":[0],"merge":true}
 {"relative_path":"exclude.mid","skip":true}
+{"relative_path":"unusable.mid","reject":true,"reason":"No identifiable piano track."}
 ```
 
 Selecting multiple tracks requires `"merge": true`; they are never merged
 automatically. Preparation preserves tick timing, durations, velocities, tempo
 events, and CC64 sustain events. It only removes non-positive-duration notes
 from explicitly or automatically selected piano tracks.
+
+Use `cc64_track_indices` only when manual review identifies a discarded
+controller-carrier track whose sustain events belong to the selected piano.
+Explicitly rejected files require a reason. A completed non-dry run writes
+`reports/final_dataset_validation.json` and
+`reports/final_dataset_validation.md`, reparsing every expected output and
+checking statistics, filename traceability, missing files, and invalid notes.
+Valid MIDI pitches outside the standard 88-key acoustic-piano range (21-108)
+are retained but listed as non-blocking suspicious outputs for human review.

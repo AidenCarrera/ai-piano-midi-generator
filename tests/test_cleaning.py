@@ -158,6 +158,65 @@ def test_multiple_tracks_merge_only_with_explicit_merge_override(
     assert merged.pedal_events_kept == 4
 
 
+def test_manual_cc64_carrier_preserves_controls_without_unrelated_notes(
+    tmp_path: Path,
+) -> None:
+    raw_root = tmp_path / "raw"
+    output_root = tmp_path / "processed"
+    source = raw_root / "carrier.mid"
+    carrier = Track("Controller carrier", 24, False)
+    carrier.notes.append(Note(0, 120, 55, 70))
+    carrier.controls.append(ControlChange(100, 64, 127))
+    carrier.controls.append(ControlChange(900, 64, 0))
+    lower = piano_track("Lower", pitch=48)
+    upper = piano_track("Upper", pitch=72)
+    lower.controls.clear()
+    upper.controls.clear()
+    make_score(source, [carrier, lower, upper])
+
+    result = clean_midi_file(
+        raw_record=raw_record(source, raw_root),
+        input_root=raw_root,
+        output_root=output_root,
+        override=TrackSelectionOverride(
+            "carrier.mid", (1, 2), cc64_track_indices=(0,), merge=True
+        ),
+    )
+
+    cleaned = ScoreTick.from_file(output_root / "carrier.mid")
+    assert result.status == "processed"
+    assert sorted(note.pitch for note in cleaned.tracks[0].notes) == [48, 72]
+    assert [
+        (control.time, control.value) for control in cleaned.tracks[0].controls
+    ] == [
+        (100, 127),
+        (900, 0),
+    ]
+    assert result.pedal_events_kept == 2
+    assert [track["track_index"] for track in result.cc64_source_tracks] == [0]
+
+
+def test_rejected_override_records_reason_without_writing_output(
+    tmp_path: Path,
+) -> None:
+    raw_root = tmp_path / "raw"
+    source = raw_root / "reject.mid"
+    make_score(source, [piano_track()])
+
+    result = clean_midi_file(
+        raw_record=raw_record(source, raw_root),
+        input_root=raw_root,
+        output_root=tmp_path / "processed",
+        override=TrackSelectionOverride(
+            "reject.mid", reject=True, reason="Ambiguous source"
+        ),
+    )
+
+    assert result.status == "rejected"
+    assert result.rejection_reason == "Ambiguous source"
+    assert not (tmp_path / "processed").exists()
+
+
 def test_invalid_duration_notes_are_removed_and_logged(tmp_path: Path) -> None:
     raw_root = tmp_path / "raw"
     output_root = tmp_path / "processed"

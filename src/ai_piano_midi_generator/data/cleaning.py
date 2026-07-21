@@ -13,7 +13,7 @@ from symusic.core import ScoreTick, TrackTick
 
 from ai_piano_midi_generator.data.inspection import sha256_file
 
-CleaningStatus = Literal["processed", "needs_review", "skipped", "failed"]
+CleaningStatus = Literal["processed", "rejected", "needs_review", "skipped", "failed"]
 
 PIANO_PROGRAMS = frozenset(range(8))
 EXCLUDED_TRACK_NAME_WORDS = frozenset(
@@ -48,8 +48,11 @@ class TrackSelectionOverride:
 
     relative_path: str
     selected_track_indices: tuple[int, ...] | None = None
+    cc64_track_indices: tuple[int, ...] = ()
     merge: bool = False
     skip: bool = False
+    reject: bool = False
+    reason: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -58,6 +61,7 @@ class SelectionDecision:
 
     selected_indices: tuple[int, ...]
     candidate_indices: tuple[int, ...]
+    cc64_indices: tuple[int, ...]
     merge: bool
     needs_review: bool
     warnings: tuple[str, ...] = ()
@@ -72,12 +76,14 @@ class CleaningRecord:
     output_path: str
     status: CleaningStatus
     selected_tracks: list[dict[str, object]] = field(default_factory=list)
+    cc64_source_tracks: list[dict[str, object]] = field(default_factory=list)
     removed_tracks: list[dict[str, object]] = field(default_factory=list)
     notes_kept: int = 0
     pedal_events_kept: int = 0
     invalid_notes_removed: list[dict[str, object]] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
     error: str | None = None
+    rejection_reason: str | None = None
     dry_run: bool = False
 
     def to_dict(self) -> dict[str, object]:
@@ -149,12 +155,21 @@ def load_track_selections(path: Path) -> dict[str, TrackSelectionOverride]:
             raise ValueError(f"Duplicate track selection override: {normalized}")
 
         skip = row.get("skip", False)
+        reject = row.get("reject", False)
         merge = row.get("merge", False)
         selected_value = row.get("selected_track_indices")
-        if not isinstance(skip, bool) or not isinstance(merge, bool):
+        cc64_value = row.get("cc64_track_indices", [])
+        reason = row.get("reason")
+        if (
+            not isinstance(skip, bool)
+            or not isinstance(reject, bool)
+            or not isinstance(merge, bool)
+        ):
             raise ValueError(
-                f"skip and merge must be booleans in {path} line {line_number}"
+                f"skip, reject, and merge must be booleans in {path} line {line_number}"
             )
+        if reason is not None and not isinstance(reason, str):
+            raise ValueError(f"reason must be a string in {path} line {line_number}")
 
         selected_indices: tuple[int, ...] | None = None
         if selected_value is not None:
@@ -174,11 +189,31 @@ def load_track_selections(path: Path) -> dict[str, TrackSelectionOverride]:
             if len(selected_indices) != len(set(selected_indices)):
                 raise ValueError(f"Duplicate selected track index in {normalized}")
 
-        if skip and selected_indices is not None:
-            raise ValueError(f"A skipped override cannot select tracks: {normalized}")
-        if not skip and selected_indices is None:
+        if not isinstance(cc64_value, list) or not all(
+            isinstance(index, int) and not isinstance(index, bool)
+            for index in cc64_value
+        ):
             raise ValueError(
-                f"Override must provide selected_track_indices or skip=true: {normalized}"
+                f"cc64_track_indices must be a list of integers in {path} line {line_number}"
+            )
+        cc64_indices = tuple(cc64_value)
+        if len(cc64_indices) != len(set(cc64_indices)):
+            raise ValueError(f"Duplicate CC64 track index in {normalized}")
+
+        if skip and reject:
+            raise ValueError(
+                f"Override cannot be both skipped and rejected: {normalized}"
+            )
+        if (skip or reject) and (selected_indices is not None or cc64_indices):
+            raise ValueError(
+                f"Skipped or rejected override cannot select tracks: {normalized}"
+            )
+        if reject and (reason is None or not reason.strip()):
+            raise ValueError(f"Rejected override requires a reason: {normalized}")
+        if not skip and not reject and selected_indices is None:
+            raise ValueError(
+                "Override must select tracks, set skip=true, or set reject=true: "
+                f"{normalized}"
             )
         if merge and (selected_indices is None or len(selected_indices) < 2):
             raise ValueError(
@@ -188,8 +223,11 @@ def load_track_selections(path: Path) -> dict[str, TrackSelectionOverride]:
         overrides[normalized] = TrackSelectionOverride(
             relative_path=normalized,
             selected_track_indices=selected_indices,
+            cc64_track_indices=cc64_indices,
             merge=merge,
             skip=skip,
+            reject=reject,
+            reason=reason.strip() if isinstance(reason, str) else None,
         )
     return overrides
 
@@ -213,6 +251,15 @@ def _is_piano_candidate(track: TrackTick) -> bool:
     )
 
 
+def _is_manual_piano_selection(track: TrackTick) -> bool:
+    """Allow a human override to supersede only the conservative name heuristic."""
+    return (
+        not track.is_drum
+        and track.program in PIANO_PROGRAMS
+        and _has_valid_duration_note(track)
+    )
+
+
 def select_piano_tracks(
     score: ScoreTick, override: TrackSelectionOverride | None = None
 ) -> SelectionDecision:
@@ -228,40 +275,73 @@ def select_piano_tracks(
         ]
         if invalid_indices:
             return SelectionDecision(
-                (),
-                candidates,
-                False,
-                True,
-                (f"override_track_indices_out_of_range:{invalid_indices}",),
+                selected_indices=(),
+                candidate_indices=candidates,
+                cc64_indices=(),
+                merge=False,
+                needs_review=True,
+                warnings=(f"override_track_indices_out_of_range:{invalid_indices}",),
             )
 
         disallowed = [
-            index for index in indices if not _is_piano_candidate(score.tracks[index])
+            index
+            for index in indices
+            if not _is_manual_piano_selection(score.tracks[index])
         ]
         if disallowed:
             return SelectionDecision(
-                (),
-                candidates,
-                False,
-                True,
-                (f"override_selected_non_piano_or_invalid_tracks:{disallowed}",),
+                selected_indices=(),
+                candidate_indices=candidates,
+                cc64_indices=(),
+                merge=False,
+                needs_review=True,
+                warnings=(
+                    f"override_selected_non_piano_or_invalid_tracks:{disallowed}",
+                ),
+            )
+        invalid_cc64_indices = [
+            index
+            for index in override.cc64_track_indices
+            if not 0 <= index < len(score.tracks)
+            or score.tracks[index].is_drum
+            or not any(control.number == 64 for control in score.tracks[index].controls)
+            or index in indices
+        ]
+        if invalid_cc64_indices:
+            return SelectionDecision(
+                selected_indices=(),
+                candidate_indices=candidates,
+                cc64_indices=(),
+                merge=False,
+                needs_review=True,
+                warnings=(
+                    f"override_invalid_or_duplicate_cc64_tracks:{invalid_cc64_indices}",
+                ),
             )
         if len(indices) > 1 and not override.merge:
             return SelectionDecision(
-                (),
-                candidates,
-                False,
-                True,
-                ("multiple_selected_tracks_require_merge_true",),
+                selected_indices=(),
+                candidate_indices=candidates,
+                cc64_indices=(),
+                merge=False,
+                needs_review=True,
+                warnings=("multiple_selected_tracks_require_merge_true",),
             )
-        return SelectionDecision(indices, candidates, override.merge, False)
+        return SelectionDecision(
+            selected_indices=indices,
+            candidate_indices=candidates,
+            cc64_indices=override.cc64_track_indices,
+            merge=override.merge,
+            needs_review=False,
+        )
 
     if len(candidates) == 1:
-        return SelectionDecision(candidates, candidates, False, False)
+        return SelectionDecision(candidates, candidates, (), False, False)
     if not candidates:
         return SelectionDecision(
             (),
             candidates,
+            (),
             False,
             True,
             ("no_unambiguous_piano_track",),
@@ -269,6 +349,7 @@ def select_piano_tracks(
     return SelectionDecision(
         (),
         candidates,
+        (),
         False,
         True,
         (f"ambiguous_piano_tracks:{list(candidates)}",),
@@ -350,6 +431,13 @@ def _write_midi_atomic(score: ScoreTick, output_path: Path) -> None:
             temporary_path.unlink()
 
 
+def _display_path(path: Path) -> str:
+    try:
+        return path.resolve().relative_to(Path.cwd().resolve()).as_posix()
+    except ValueError:
+        return path.resolve().as_posix()
+
+
 def clean_midi_file(
     *,
     raw_record: dict[str, object],
@@ -368,20 +456,11 @@ def clean_midi_file(
     output_path = _safe_child(output_root, relative_path)
     record = CleaningRecord(
         relative_path=relative_path,
-        source_path=source_path.as_posix(),
-        output_path=output_path.as_posix(),
+        source_path=_display_path(source_path),
+        output_path=_display_path(output_path),
         status="failed",
         dry_run=dry_run,
     )
-
-    if override is not None and override.skip:
-        record.status = "skipped"
-        record.warnings.append("skipped_by_track_selection_override")
-        return record
-    if output_path.exists() and not overwrite:
-        record.status = "skipped"
-        record.warnings.append("output_exists_use_overwrite")
-        return record
 
     try:
         if not source_path.is_file():
@@ -393,6 +472,15 @@ def clean_midi_file(
                 raise ValueError(
                     f"Raw file hash differs from inventory: {relative_path}"
                 )
+
+        if override is not None and override.reject:
+            record.status = "rejected"
+            record.rejection_reason = override.reason
+            return record
+        if override is not None and override.skip:
+            record.status = "skipped"
+            record.warnings.append("skipped_by_track_selection_override")
+            return record
 
         score = ScoreTick.from_file(source_path)
         decision = select_piano_tracks(score, override)
@@ -411,6 +499,10 @@ def clean_midi_file(
         record.selected_tracks = [
             _track_details(index, score.tracks[index])
             for index in decision.selected_indices
+        ]
+        record.cc64_source_tracks = [
+            _track_details(index, score.tracks[index])
+            for index in decision.cc64_indices
         ]
         record.removed_tracks = [
             _track_details(index, track)
@@ -435,12 +527,19 @@ def clean_midi_file(
         cleaned_score = score.copy()
         cleaned_score.tracks.clear()
         if decision.merge:
-            cleaned_score.tracks.append(_merge_tracks(cleaned_tracks))
+            output_track = _merge_tracks(cleaned_tracks)
             record.warnings.append(
                 f"explicitly_merged_piano_tracks:{list(decision.selected_indices)}"
             )
         else:
-            cleaned_score.tracks.append(cleaned_tracks[0])
+            output_track = cleaned_tracks[0]
+
+        for index in decision.cc64_indices:
+            for control in score.tracks[index].controls:
+                if control.number == 64:
+                    output_track.controls.append(control.copy())
+        output_track.controls.sort()
+        cleaned_score.tracks.append(output_track)
 
         record.notes_kept = sum(len(track.notes) for track in cleaned_tracks)
         record.pedal_events_kept = sum(
@@ -449,13 +548,23 @@ def clean_midi_file(
             for control in track.controls
             if control.number == 64
         )
+        record.pedal_events_kept += sum(
+            1
+            for index in decision.cc64_indices
+            for control in score.tracks[index].controls
+            if control.number == 64
+        )
 
-        if dry_run:
+        if output_path.exists() and not overwrite:
+            record.status = "skipped"
+            record.warnings.append("output_exists_use_overwrite")
+        elif dry_run:
             cleaned_score.dumps_midi()
             record.warnings.append("dry_run_no_output_written")
+            record.status = "processed"
         else:
             _write_midi_atomic(cleaned_score, output_path)
-        record.status = "processed"
+            record.status = "processed"
     except Exception as exc:  # one bad source must not stop the dataset
         record.status = "failed"
         record.error = f"{type(exc).__name__}: {exc}"
@@ -521,6 +630,7 @@ def status_counts(records: list[CleaningRecord]) -> dict[str, int]:
     counts = Counter(record.status for record in records)
     return {
         "processed": counts["processed"],
+        "rejected": counts["rejected"],
         "needs_review": counts["needs_review"],
         "skipped": counts["skipped"],
         "failed": counts["failed"],
