@@ -114,3 +114,22 @@ Explicitly rejected files require a reason. A completed non-dry run writes
 checking statistics, filename traceability, missing files, and invalid notes.
 Valid MIDI pitches outside the standard 88-key acoustic-piano range (21-108)
 are retained but listed as non-blocking suspicious outputs for human review.
+
+## Analyze expressive tokenization
+
+Analyze the cleaned MIDI files in memory without writing a tokenized training
+dataset:
+
+```powershell
+uv run python scripts/analyze_tokenization.py
+```
+
+The default event vocabulary uses 10 ms time steps, time-shift tokens up to one
+second, 32 velocity bins, note-on and note-off tokens for all MIDI pitches, and
+binary CC64 pedal tokens. Tempo changes are converted to elapsed seconds rather
+than represented as tokens. Decoding writes a fixed 120 QPM representation for
+round-trip validation only.
+
+Use `--timing-resolution`, `--maximum-time-shift`, `--velocity-bins`, and
+`--decode-tempo` to evaluate other settings. The command writes
+`reports/tokenization_analysis.json` and `reports/tokenization_analysis.md`.
