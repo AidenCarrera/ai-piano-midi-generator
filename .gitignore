@@ -38,6 +38,7 @@ reports/tokenization/
 reports/baseline_1024/
 reports/baseline_2048/
 reports/archive/
+reports/figures/
 
 # Model and training artifacts
 checkpoints/

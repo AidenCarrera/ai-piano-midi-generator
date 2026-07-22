@@ -10,7 +10,7 @@ configs/                    Versioned training, generation, and experiment setti
 data/raw/                   Read-only source MIDI files
 data/processed/             Cleaned MIDI and compact token arrays
 data/manifests/             Review decisions, inventories, groups, and splits
-notebooks/                  Interactive analysis (kept empty until needed)
+notebooks/                  Optional interactive report exploration
 scripts/                    Stable dataset, training, generation, and evaluation CLIs
 scripts/experiments/        Reproducible model-analysis experiments
 src/ai_piano_midi_generator/ Reusable library code
@@ -18,6 +18,7 @@ tests/                      Automated tests
 checkpoints/                Local model checkpoints, organized by baseline
 outputs/                    Local generated MIDI/token artifacts by baseline
 reports/                    Generated reports by pipeline phase and baseline
+reports/figures/            Generated dataset and experiment figures
 ```
 
 Historical experiment reports and outputs live under `reports/archive/` and
@@ -276,3 +277,24 @@ and MIDI samples under `outputs/baseline_1024/evaluation/`. Use
 `--min-new-tokens` to prevent
 premature EOS during generation. The command defaults to
 `checkpoints/baseline_1024/best.pt`; it does not load `latest.pt`.
+
+## Visualize datasets and experiments
+
+Create report-driven PNG figures without changing the dataset, tokenizer,
+model, or training pipeline:
+
+```powershell
+uv run python scripts/create_visualizations.py
+```
+
+The command saves dataset preparation, tokenization, grouped split, available
+training-loss, and generated-versus-test figures under `reports/figures/`.
+Missing optional experiment reports are skipped unless `--strict` is supplied.
+Use `--format svg` or `--format both` for vector output.
+
+For interactive exploration, start Jupyter Lab and open
+`notebooks/project_visualizations.ipynb`:
+
+```powershell
+uv run --with jupyter jupyter lab
+```
