@@ -31,13 +31,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--summary-json",
         type=Path,
-        default=Path("reports/dataset_summary.json"),
+        default=Path("reports/dataset/inventory.json"),
         help="Output JSON summary path.",
     )
     parser.add_argument(
         "--summary-markdown",
         type=Path,
-        default=Path("reports/dataset_summary.md"),
+        default=Path("reports/dataset/inventory.md"),
         help="Output Markdown summary path.",
     )
     return parser

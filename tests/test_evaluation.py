@@ -16,7 +16,7 @@ from ai_piano_midi_generator.evaluation import (
     token_category,
 )
 from ai_piano_midi_generator.model import PianoTransformer, TransformerConfig
-from ai_piano_midi_generator.sampling import sample_tokens
+from ai_piano_midi_generator.sampling import sample_tokens, sanitize_prompt_tokens
 from ai_piano_midi_generator.tokenizer import (
     BOS_TOKEN,
     EOS_TOKEN,
@@ -70,7 +70,9 @@ def test_test_metrics_count_categories_and_invalid_predictions() -> None:
 
     assert result["evaluated_token_count"] == len(tokens) - 1
     assert result["parameter_count"] == model.parameter_count()
-    assert float(result["test_loss"]) > 0
+    test_loss = result["test_loss"]
+    assert isinstance(test_loss, (int, float))
+    assert test_loss > 0
     categories = result["token_accuracy_by_category"]
     assert isinstance(categories, dict)
     assert sum(int(value["count"]) for value in categories.values()) == len(tokens) - 1
@@ -120,6 +122,23 @@ class _AlwaysEosModel(nn.Module):
         return logits, None
 
 
+class _AlwaysShiftModel(nn.Module):
+    def __init__(self, tokenizer: ExpressiveMidiTokenizer) -> None:
+        super().__init__()
+        self.anchor = nn.Parameter(torch.zeros(1))
+        self.config = SimpleNamespace(context_length=16)
+        self.tokenizer = tokenizer
+
+    def forward(self, input_ids: torch.Tensor) -> tuple[torch.Tensor, None]:
+        logits = torch.full(
+            (*input_ids.shape, self.tokenizer.vocabulary_size),
+            -100.0,
+            device=input_ids.device,
+        )
+        logits[..., self.tokenizer.token_to_id["TIME_SHIFT_1"]] = 100.0
+        return logits, None
+
+
 def test_minimum_generation_length_blocks_early_eos() -> None:
     tokenizer = ExpressiveMidiTokenizer()
     model = cast(PianoTransformer, _AlwaysEosModel(tokenizer))
@@ -139,6 +158,42 @@ def test_minimum_generation_length_blocks_early_eos() -> None:
     assert result.invalid_events_blocked["minimum_length_eos"] == 5
 
 
+def test_eos_is_allowed_from_the_first_prediction_without_a_minimum() -> None:
+    tokenizer = ExpressiveMidiTokenizer()
+    model = cast(PianoTransformer, _AlwaysEosModel(tokenizer))
+
+    result = sample_tokens(
+        model,
+        tokenizer,
+        maximum_new_tokens=2048,
+        minimum_new_tokens=0,
+        top_k=1,
+        top_p=1.0,
+        seed=7,
+    )
+
+    assert result.tokens == (BOS_TOKEN, EOS_TOKEN)
+    assert result.final_state_repairs == {}
+    assert result.safeguard_interventions == ()
+
+
+def test_prompt_sanitizer_removes_redundant_pedal_state_events() -> None:
+    tokenizer = ExpressiveMidiTokenizer()
+    prompt = (
+        BOS_TOKEN,
+        "PEDAL_UP",
+        PEDAL_DOWN_TOKEN,
+        PEDAL_DOWN_TOKEN,
+        "PEDAL_UP",
+        "PEDAL_UP",
+    )
+
+    sanitized, repairs = sanitize_prompt_tokens(prompt, tokenizer)
+
+    assert sanitized == (BOS_TOKEN, PEDAL_DOWN_TOKEN, "PEDAL_UP")
+    assert repairs == {"duplicate_pedal_down": 1, "pedal_up_while_up": 2}
+
+
 @pytest.mark.parametrize("minimum", [-1, 11])
 def test_invalid_minimum_generation_length_is_rejected(minimum: int) -> None:
     tokenizer = ExpressiveMidiTokenizer()
@@ -150,6 +205,103 @@ def test_invalid_minimum_generation_length_is_rejected(minimum: int) -> None:
             tokenizer,
             maximum_new_tokens=10,
             minimum_new_tokens=minimum,
+        )
+
+
+def test_duration_limit_terminates_without_forcing_a_note() -> None:
+    tokenizer = ExpressiveMidiTokenizer()
+    model = cast(PianoTransformer, _AlwaysShiftModel(tokenizer))
+
+    result = sample_tokens(
+        model,
+        tokenizer,
+        maximum_new_tokens=20,
+        minimum_new_tokens=10,
+        top_k=1,
+        top_p=1.0,
+        maximum_duration_seconds=0.03,
+    )
+
+    assert result.tokens == (
+        BOS_TOKEN,
+        "TIME_SHIFT_1",
+        "TIME_SHIFT_1",
+        "TIME_SHIFT_1",
+        EOS_TOKEN,
+    )
+    assert result.safeguard_interventions[0]["kind"] == "duration_limit"
+    assert result.safeguard_interventions[0]["action"] == "terminate_with_eos"
+
+
+def test_silence_limit_tracks_time_since_last_note_on_and_preserves_grammar() -> None:
+    tokenizer = ExpressiveMidiTokenizer()
+    model = cast(PianoTransformer, _AlwaysShiftModel(tokenizer))
+    prompt = (BOS_TOKEN, "VELOCITY_8", "NOTE_ON_60")
+
+    result = sample_tokens(
+        model,
+        tokenizer,
+        prompt_tokens=prompt,
+        maximum_new_tokens=20,
+        top_k=1,
+        top_p=1.0,
+        maximum_silence_seconds=0.02,
+    )
+    decoded = tokenizer.decode(result.tokens)
+
+    assert result.safeguard_interventions[0]["kind"] == "silence_limit"
+    assert result.final_state_repairs == {
+        "appended_eos": 1,
+        "closed_active_notes": 1,
+    }
+    assert decoded.repairs.total == 0
+
+
+def test_safeguards_are_disabled_by_default() -> None:
+    tokenizer = ExpressiveMidiTokenizer()
+    model = cast(PianoTransformer, _AlwaysShiftModel(tokenizer))
+
+    result = sample_tokens(
+        model,
+        tokenizer,
+        maximum_new_tokens=7,
+        top_k=1,
+        top_p=1.0,
+    )
+
+    assert result.tokens.count("TIME_SHIFT_1") == 7
+    assert result.safeguard_interventions == ()
+
+
+def test_endurance_mode_forces_exact_model_token_count_without_safeguards() -> None:
+    tokenizer = ExpressiveMidiTokenizer()
+    model = cast(PianoTransformer, _AlwaysEosModel(tokenizer))
+
+    result = sample_tokens(
+        model,
+        tokenizer,
+        maximum_new_tokens=7,
+        minimum_new_tokens=0,
+        top_k=1,
+        top_p=1.0,
+        generation_mode="endurance",
+    )
+
+    assert result.tokens.count("TIME_SHIFT_1") == 7
+    assert result.tokens[-1] == EOS_TOKEN
+    assert result.safeguard_interventions == ()
+
+
+def test_endurance_mode_rejects_safeguards() -> None:
+    tokenizer = ExpressiveMidiTokenizer()
+    model = tiny_model(tokenizer.vocabulary_size)
+
+    with pytest.raises(ValueError, match="Endurance mode"):
+        sample_tokens(
+            model,
+            tokenizer,
+            generation_mode="endurance",
+            maximum_duration_seconds=10.0,
         )
 
 

@@ -44,13 +44,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--report-json",
         type=Path,
-        default=Path("reports/tokenized_dataset_preparation.json"),
+        default=Path("reports/tokenization/dataset_preparation.json"),
         help="Machine-readable split and chunk analysis report.",
     )
     parser.add_argument(
         "--report-markdown",
         type=Path,
-        default=Path("reports/tokenized_dataset_preparation.md"),
+        default=Path("reports/tokenization/dataset_preparation.md"),
         help="Human-readable split and chunk analysis report.",
     )
     parser.add_argument("--seed", type=int, default=2026, help="Fixed split seed.")

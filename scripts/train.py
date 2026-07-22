@@ -8,6 +8,7 @@ import tomllib
 from dataclasses import replace
 from functools import partial
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Sequence
 
 import torch
@@ -31,7 +32,11 @@ from ai_piano_midi_generator.training import (
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--config", type=Path, default=Path("configs/baseline.toml"))
+    parser.add_argument(
+        "--config",
+        type=Path,
+        default=Path("configs/training_baseline_1024.toml"),
+    )
     parser.add_argument("--device", choices=["auto", "cuda", "cpu"], default="auto")
     parser.add_argument("--resume", type=Path)
     parser.add_argument("--max-steps", type=int)
@@ -172,17 +177,22 @@ def main(argv: Sequence[str] | None = None) -> int:
         amp=training_config.amp,
     )
 
+    configured_checkpoint_directory = Path(str(output_config["checkpoint_directory"]))
+    configured_report_path = Path(str(output_config["training_report"]))
+    temporary_checkpoints: TemporaryDirectory[str] | None = None
     if args.smoke_test:
-        checkpoint_directory = Path("checkpoints/smoke")
-        report_path = Path("reports/training_smoke.json")
+        temporary_checkpoints = TemporaryDirectory(prefix="ai-piano-smoke-")
+        checkpoint_directory = Path(temporary_checkpoints.name)
+        report_path = configured_report_path.with_name("smoke_test.json")
         step_limit = 1
     elif args.tiny_overfit:
-        checkpoint_directory = Path("checkpoints/tiny_overfit")
-        report_path = Path("reports/tiny_overfit.json")
+        temporary_checkpoints = TemporaryDirectory(prefix="ai-piano-overfit-")
+        checkpoint_directory = Path(temporary_checkpoints.name)
+        report_path = configured_report_path.with_name("tiny_overfit.json")
         step_limit = args.overfit_steps
     else:
-        checkpoint_directory = Path(str(output_config["checkpoint_directory"]))
-        report_path = Path(str(output_config["training_report"]))
+        checkpoint_directory = configured_checkpoint_directory
+        report_path = configured_report_path
         step_limit = args.max_steps or training_config.maximum_steps
 
     summary = train_model(
@@ -195,6 +205,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         resume_path=args.resume,
         maximum_steps=step_limit,
     )
+    if temporary_checkpoints is not None:
+        temporary_checkpoints.cleanup()
     report: dict[str, object] = {
         **summary,
         "initial_loss": initial_loss,

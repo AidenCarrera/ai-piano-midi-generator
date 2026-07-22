@@ -33,13 +33,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--report-json",
         type=Path,
-        default=Path("reports/tokenization_analysis.json"),
+        default=Path("reports/tokenization/analysis.json"),
         help="Machine-readable analysis report.",
     )
     parser.add_argument(
         "--report-markdown",
         type=Path,
-        default=Path("reports/tokenization_analysis.md"),
+        default=Path("reports/tokenization/analysis.md"),
         help="Human-readable analysis report.",
     )
     parser.add_argument(

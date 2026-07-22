@@ -31,7 +31,7 @@ amp = true
 
 [output]
 checkpoint_directory = "checkpoints/baseline_2048"
-training_report = "reports/baseline_2048_training.json"
+training_report = "reports/baseline_2048/training.json"
 
 [sampling]
 maximum_new_tokens = 2048

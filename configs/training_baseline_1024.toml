@@ -30,8 +30,8 @@ data_loader_workers = 0
 amp = true
 
 [output]
-checkpoint_directory = "checkpoints/baseline"
-training_report = "reports/baseline_training.json"
+checkpoint_directory = "checkpoints/baseline_1024"
+training_report = "reports/baseline_1024/training.json"
 
 [sampling]
 maximum_new_tokens = 1024

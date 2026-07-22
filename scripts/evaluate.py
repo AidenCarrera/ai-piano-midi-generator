@@ -40,7 +40,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--checkpoint",
         type=Path,
-        default=Path("checkpoints/baseline/best.pt"),
+        default=Path("checkpoints/baseline_1024/best.pt"),
     )
     parser.add_argument(
         "--manifest",
@@ -50,17 +50,17 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--json-report",
         type=Path,
-        default=Path("reports/baseline_evaluation.json"),
+        default=Path("reports/baseline_1024/evaluation.json"),
     )
     parser.add_argument(
         "--markdown-report",
         type=Path,
-        default=Path("reports/baseline_evaluation.md"),
+        default=Path("reports/baseline_1024/evaluation.md"),
     )
     parser.add_argument(
         "--output-directory",
         type=Path,
-        default=Path("outputs/baseline_evaluation"),
+        default=Path("outputs/baseline_1024/evaluation"),
     )
     parser.add_argument("--device", choices=["auto", "cuda", "cpu"], default="auto")
     parser.add_argument("--batch-size", type=int, default=4)

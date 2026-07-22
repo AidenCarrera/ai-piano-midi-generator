@@ -3,6 +3,28 @@
 Environment and project configuration for an AI jazz piano MIDI generator.
 This setup uses Python 3.13, `uv`, and a CUDA-enabled PyTorch build for Windows.
 
+## Project layout
+
+```text
+configs/                    Versioned training, generation, and experiment settings
+data/raw/                   Read-only source MIDI files
+data/processed/             Cleaned MIDI and compact token arrays
+data/manifests/             Review decisions, inventories, groups, and splits
+notebooks/                  Interactive analysis (kept empty until needed)
+scripts/                    Stable dataset, training, generation, and evaluation CLIs
+scripts/experiments/        Reproducible model-analysis experiments
+src/ai_piano_midi_generator/ Reusable library code
+tests/                      Automated tests
+checkpoints/                Local model checkpoints, organized by baseline
+outputs/                    Local generated MIDI/token artifacts by baseline
+reports/                    Generated reports by pipeline phase and baseline
+```
+
+Historical experiment reports and outputs live under `reports/archive/` and
+the corresponding model's `outputs/.../archive/` directory. Checkpoints,
+outputs, generated reports, raw data, and processed data are local artifacts and
+are intentionally ignored by Git.
+
 ## Setup
 
 From the project root, create or update the local environment and install all
@@ -63,8 +85,8 @@ instead.
 The inspector recursively reads `.mid` files without changing them and writes:
 
 - `data/manifests/raw_inventory.jsonl`
-- `reports/dataset_summary.json`
-- `reports/dataset_summary.md`
+- `reports/dataset/inventory.json`
+- `reports/dataset/inventory.md`
 
 Files are accepted when they parse and contain valid pitched notes on General
 MIDI piano programs 0-7. Files with usable piano notes plus drums, non-piano
@@ -109,8 +131,8 @@ from explicitly or automatically selected piano tracks.
 Use `cc64_track_indices` only when manual review identifies a discarded
 controller-carrier track whose sustain events belong to the selected piano.
 Explicitly rejected files require a reason. A completed non-dry run writes
-`reports/final_dataset_validation.json` and
-`reports/final_dataset_validation.md`, reparsing every expected output and
+`reports/dataset/validation.json` and `reports/dataset/validation.md`,
+reparsing every expected output and
 checking statistics, filename traceability, missing files, and invalid notes.
 Valid MIDI pitches outside the standard 88-key acoustic-piano range (21-108)
 are retained but listed as non-blocking suspicious outputs for human review.
@@ -132,7 +154,7 @@ round-trip validation only.
 
 Use `--timing-resolution`, `--maximum-time-shift`, `--velocity-bins`, and
 `--decode-tempo` to evaluate other settings. The command writes
-`reports/tokenization_analysis.json` and `reports/tokenization_analysis.md`.
+`reports/tokenization/analysis.json` and `reports/tokenization/analysis.md`.
 
 ## Prepare grouped token arrays and splits
 
@@ -157,21 +179,22 @@ the preparation report only analyzes 512, 1024, and 2048-token chunk plans.
 Unsafe chunk starts receive explicit active-note and pedal-state reconstruction
 prefixes. Existing arrays are verified and reused when identical; pass
 `--overwrite` to replace differing generated arrays.
+The preparation reports are written under `reports/tokenization/`.
 
 ## Train the decoder-only baseline
 
 Run the required checks before a full training job:
 
 ```powershell
-uv run python scripts/train.py --config configs/baseline.toml --smoke-test
-uv run python scripts/train.py --config configs/baseline.toml --tiny-overfit
+uv run python scripts/train.py --config configs/training_baseline_1024.toml --smoke-test
+uv run python scripts/train.py --config configs/training_baseline_1024.toml --tiny-overfit
 ```
 
 Start or resume the full plain-PyTorch baseline with:
 
 ```powershell
-uv run python scripts/train.py --config configs/baseline.toml
-uv run python scripts/train.py --config configs/baseline.toml --resume checkpoints/baseline/latest.pt
+uv run python scripts/train.py --config configs/training_baseline_1024.toml
+uv run python scripts/train.py --config configs/training_baseline_1024.toml --resume checkpoints/baseline_1024/latest.pt
 ```
 
 The baseline uses a 1,024-token causal context, shifted next-token loss, AdamW,
@@ -183,9 +206,9 @@ baseline from scratch. It uses 2,048-token dataset chunks and eight-way
 gradient accumulation so its effective token batch remains comparable:
 
 ```powershell
-uv run python scripts/train.py --config configs/baseline_2048.toml --smoke-test
-uv run python scripts/train.py --config configs/baseline_2048.toml --tiny-overfit
-uv run python scripts/train.py --config configs/baseline_2048.toml
+uv run python scripts/train.py --config configs/training_baseline_2048.toml --smoke-test
+uv run python scripts/train.py --config configs/training_baseline_2048.toml --tiny-overfit
+uv run python scripts/train.py --config configs/training_baseline_2048.toml
 ```
 
 Its checkpoints are written under `checkpoints/baseline_2048` and do not
@@ -194,12 +217,52 @@ replace the original 1,024-context baseline.
 Generate a constrained MIDI sample from a checkpoint:
 
 ```powershell
-uv run python scripts/generate.py --checkpoint checkpoints/baseline/best.pt --output outputs/generated.mid
+uv run python scripts/generate.py --checkpoint checkpoints/baseline_2048/best.pt
 ```
 
 Sampling supports temperature, top-k, and top-p controls and blocks invalid
 note-off, pedal, and end-of-sequence states before decoding through the existing
 tokenizer.
+
+Diagnose long-context time-shift behavior against length-matched train,
+validation, and test windows without regenerating the preserved sweep:
+
+```powershell
+uv run python scripts/experiments/diagnose_time_shift_collapse.py
+```
+
+`endurance` always samples exactly 2,048 model tokens and rejects duration or
+silence safeguards. `musical` permits safe EOS after its configured minimum and
+can terminate at explicit duration or note-on-silence limits. Safeguards are
+disabled by default in the sampler and general generation CLI; each
+intervention is recorded. To opt into the train-derived musical limits for one
+sample:
+
+```powershell
+uv run python scripts/generate.py --checkpoint checkpoints/baseline_2048/best.pt --config configs/generation_baseline_2048_musical.toml
+```
+
+Use `--mode endurance --max-new-tokens 2048` for an unconstrained stress test,
+or configure musical controls directly with `--max-duration-seconds`,
+`--max-silence-seconds`, and `--safeguard-action`. Constrained musical results
+do not replace the endurance evidence or demonstrate that the underlying model
+attractor is fixed.
+
+Evaluate natural termination without any minimum length or timing safeguard:
+
+```powershell
+uv run python scripts/experiments/evaluate_natural_termination.py
+```
+
+This runs 10 seeds at temperatures 0.85, 0.90, and 0.95 for both unconditional
+generation and continuations from the first 256 tokens of distinct held-out
+test files. EOS
+is legal from the first prediction; 2,048 tokens is only a maximum. The report
+records natural EOS position, cap endings, notes, duration, state repairs, and
+dataset-derived degeneracy flags. If interrupted, continue with `--resume`.
+The generated DAW audition queue deliberately keeps automated validity and
+human judgments such as completeness, repetition, and harmonic coherence
+separate.
 
 Evaluate the best checkpoint once on the held-out test split and generate
 matched unconditional and prompted samples with:
@@ -208,7 +271,8 @@ matched unconditional and prompted samples with:
 uv run python scripts/evaluate.py
 ```
 
-The evaluation writes JSON and Markdown reports under `reports/` and MIDI
-samples under `outputs/baseline_evaluation/`. Use `--min-new-tokens` to prevent
+The evaluation writes JSON and Markdown reports under `reports/baseline_1024/`
+and MIDI samples under `outputs/baseline_1024/evaluation/`. Use
+`--min-new-tokens` to prevent
 premature EOS during generation. The command defaults to
-`checkpoints/baseline/best.pt`; it does not load `latest.pt`.
+`checkpoints/baseline_1024/best.pt`; it does not load `latest.pt`.

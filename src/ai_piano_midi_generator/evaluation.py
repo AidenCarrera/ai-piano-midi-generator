@@ -242,6 +242,10 @@ def analyze_generation(
     temperature: float,
     top_k: int | None,
     top_p: float | None,
+    generation_mode: Literal["endurance", "musical"] = "musical",
+    maximum_duration_seconds: float | None = None,
+    maximum_silence_seconds: float | None = None,
+    safeguard_action: Literal["eos", "mask_time_shifts"] = "eos",
 ) -> dict[str, object]:
     """Sample, decode, write, and independently parse one MIDI output."""
     sampled: SamplingResult = sample_tokens(
@@ -255,6 +259,10 @@ def analyze_generation(
         top_p=top_p,
         seed=seed,
         constrain_states=True,
+        generation_mode=generation_mode,
+        maximum_duration_seconds=maximum_duration_seconds,
+        maximum_silence_seconds=maximum_silence_seconds,
+        safeguard_action=safeguard_action,
     )
     decoded = tokenizer.decode(sampled.tokens)
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -288,6 +296,27 @@ def analyze_generation(
     repair_token_count = sum(sampled.final_state_repairs.values())
     generated_with_repairs = len(sampled.tokens) - len(prompt_tokens)
     model_generated_tokens = max(0, generated_with_repairs - repair_token_count)
+    model_sequence = sampled.tokens[
+        len(prompt_tokens) : len(prompt_tokens) + model_generated_tokens
+    ]
+    eos_offset = next(
+        (
+            index
+            for index, token in enumerate(model_sequence, start=1)
+            if token == EOS_TOKEN
+        ),
+        None,
+    )
+    safeguard_terminated = any(
+        intervention.get("action") == "terminate_with_eos"
+        for intervention in sampled.safeguard_interventions
+    )
+    if eos_offset is not None:
+        termination_reason = "model_eos"
+    elif safeguard_terminated:
+        termination_reason = "safeguard"
+    else:
+        termination_reason = "maximum_new_tokens"
     return {
         "mode": mode,
         "seed": seed,
@@ -298,6 +327,8 @@ def analyze_generation(
         ),
         "prompt_token_count": len(prompt_tokens),
         "model_generated_token_count": model_generated_tokens,
+        "model_eos_token_position": eos_offset,
+        "termination_reason": termination_reason,
         "total_output_token_count": len(sampled.tokens),
         "ended_with_safe_model_eos": not bool(
             sampled.final_state_repairs.get("appended_eos", 0)
@@ -308,6 +339,7 @@ def analyze_generation(
         "decoder_repairs": decoded.repairs.to_dict(),
         "blocked_invalid_events": sampled.invalid_events_blocked,
         "final_state_repairs": sampled.final_state_repairs,
+        "safeguard_interventions": list(sampled.safeguard_interventions),
         "midi_parse_valid": parse_valid,
         "parse_error": parse_error,
     }
@@ -322,6 +354,7 @@ def summarize_generation_group(
     blocked_totals: Counter[str] = Counter()
     decoder_totals: Counter[str] = Counter()
     finalization_totals: Counter[str] = Counter()
+    safeguard_totals: Counter[str] = Counter()
     durations: list[float] = []
     notes: list[int] = []
     pedal_events: list[int] = []
@@ -358,6 +391,13 @@ def summarize_generation_group(
             if not isinstance(value, dict):
                 raise ValueError(f"Generation record {field} is not an object")
             destination.update({str(name): int(count) for name, count in value.items()})
+        safeguards = record.get("safeguard_interventions", [])
+        if not isinstance(safeguards, list):
+            raise ValueError("Generation safeguard_interventions must be a list")
+        for intervention in safeguards:
+            if not isinstance(intervention, dict):
+                raise ValueError("Generation safeguard intervention must be an object")
+            safeguard_totals[str(intervention.get("kind", "unknown"))] += 1
     sample_count = len(records)
     decoder_repair_count = decoder_totals["total"]
     finalization_repair_count = sum(finalization_totals.values())
@@ -373,9 +413,13 @@ def summarize_generation_group(
         "average_decoder_repair_count": decoder_repair_count / sample_count,
         "average_finalization_repair_count": (finalization_repair_count / sample_count),
         "average_blocked_invalid_event_count": blocked_count / sample_count,
+        "average_safeguard_intervention_count": (
+            sum(safeguard_totals.values()) / sample_count
+        ),
         "decoder_repair_totals": dict(sorted(decoder_totals.items())),
         "final_state_repair_totals": dict(sorted(finalization_totals.items())),
         "blocked_invalid_event_totals": dict(sorted(blocked_totals.items())),
+        "safeguard_intervention_totals": dict(sorted(safeguard_totals.items())),
     }
 
 

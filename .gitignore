@@ -26,31 +26,18 @@ htmlcov/
 # Jupyter
 .ipynb_checkpoints/
 
-# Local datasets and generated dataset reports
+# Local datasets
 data/raw/
 data/processed/
 data/manifests/processed_inventory.jsonl
 data/manifests/tokenized_dataset.jsonl
-reports/dataset_summary.json
-reports/dataset_summary.md
-reports/final_dataset_validation.json
-reports/final_dataset_validation.md
-reports/tokenization_analysis.json
-reports/tokenization_analysis.md
-reports/tokenized_dataset_preparation.json
-reports/tokenized_dataset_preparation.md
-reports/baseline_training.json
-reports/training_smoke.json
-reports/tiny_overfit.json
-reports/generation.json
-reports/baseline_evaluation.json
-reports/baseline_evaluation.md
-reports/baseline_sampling_sweep.json
-reports/baseline_sampling_sweep.md
-reports/baseline_2048_training.json
-reports/baseline_2048_generation.json
-reports/baseline_2048_sweep.json
-reports/baseline_2048_sweep.md
+
+# Generated reports
+reports/dataset/
+reports/tokenization/
+reports/baseline_1024/
+reports/baseline_2048/
+reports/archive/
 
 # Model and training artifacts
 checkpoints/

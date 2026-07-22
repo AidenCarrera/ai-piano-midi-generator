@@ -1,0 +1,12 @@
+[generation]
+maximum_new_tokens = 2048
+minimum_new_tokens = 0
+temperatures = [0.85, 0.90, 0.95]
+top_k = 50
+top_p = 0.95
+seeds = [5001, 5002, 5003, 5004, 5005, 5006, 5007, 5008, 5009, 5010]
+
+[prompting]
+prompt_token_count = 256
+position = "performance_start"
+selection_seed = 2026

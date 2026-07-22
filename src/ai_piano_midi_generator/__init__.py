@@ -1,2 +1,1 @@
-def main() -> None:
-    print("Hello from ai-piano-midi-generator!")
+"""AI piano MIDI generator package."""

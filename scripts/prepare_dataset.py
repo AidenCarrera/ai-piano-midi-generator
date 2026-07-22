@@ -60,13 +60,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--validation-json",
         type=Path,
-        default=Path("reports/final_dataset_validation.json"),
+        default=Path("reports/dataset/validation.json"),
         help="Final machine-readable validation report.",
     )
     parser.add_argument(
         "--validation-markdown",
         type=Path,
-        default=Path("reports/final_dataset_validation.md"),
+        default=Path("reports/dataset/validation.md"),
         help="Final human-readable validation report.",
     )
     return parser

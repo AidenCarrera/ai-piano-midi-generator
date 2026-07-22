@@ -1,0 +1,13 @@
+[generation]
+mode = "musical"
+maximum_new_tokens = 2048
+minimum_new_tokens = 512
+temperature = 0.95
+top_k = 50
+top_p = 0.95
+
+# Explicit, optional train-distribution safeguards. These are not loaded unless
+# this config is passed to scripts/generate.py.
+maximum_duration_seconds = 107.3855
+maximum_silence_seconds = 5.4437
+safeguard_action = "eos"
