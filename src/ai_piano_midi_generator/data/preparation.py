@@ -572,7 +572,7 @@ def prepare_tokenized_dataset(
     report_markdown_path: Path,
     config: TokenizerConfig,
     seed: int = 2026,
-    context_lengths: tuple[int, ...] = (512, 1024, 2048),
+    context_lengths: tuple[int, ...] = (2048,),
     overwrite: bool = False,
 ) -> dict[str, object]:
     """Tokenize complete performances, split tune groups, and analyze chunks."""

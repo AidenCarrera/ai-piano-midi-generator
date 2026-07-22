@@ -26,6 +26,10 @@ the corresponding model's `outputs/.../archive/` directory. Checkpoints,
 outputs, generated reports, raw data, and processed data are local artifacts and
 are intentionally ignored by Git.
 
+The retired 1,024-context run is preserved under the archive directories in
+`reports/archive/`, `checkpoints/archive/`, and `outputs/archive/`. Active
+commands and defaults target the 2,048-context baseline.
+
 ## Setup
 
 From the project root, create or update the local environment and install all
@@ -176,7 +180,7 @@ The command groups related takes before assigning an 80/10/10 split with seed
 
 Generated arrays are written under `data/processed/tokens`, with metadata in
 `data/manifests/tokenized_dataset.jsonl`. Complete performances remain separate;
-the preparation report only analyzes 512, 1024, and 2048-token chunk plans.
+the preparation report analyzes the active 2,048-token chunk plan by default.
 Unsafe chunk starts receive explicit active-note and pedal-state reconstruction
 prefixes. Existing arrays are verified and reused when identical; pass
 `--overwrite` to replace differing generated arrays.
@@ -184,27 +188,24 @@ The preparation reports are written under `reports/tokenization/`.
 
 ## Train the decoder-only baseline
 
-Run the required checks before a full training job:
+Run the required checks before a full 2,048-context training job:
 
 ```powershell
-uv run python scripts/train.py --config configs/training_baseline_1024.toml --smoke-test
-uv run python scripts/train.py --config configs/training_baseline_1024.toml --tiny-overfit
+uv run python scripts/train.py --smoke-test
+uv run python scripts/train.py --tiny-overfit
 ```
 
 Start or resume the full plain-PyTorch baseline with:
 
 ```powershell
-uv run python scripts/train.py --config configs/training_baseline_1024.toml
-uv run python scripts/train.py --config configs/training_baseline_1024.toml --resume checkpoints/baseline_1024/latest.pt
+uv run python scripts/train.py
+uv run python scripts/train.py --resume checkpoints/baseline_2048/latest.pt
 ```
 
-The baseline uses a 1,024-token causal context, shifted next-token loss, AdamW,
-warmup plus cosine decay, gradient accumulation and clipping, CUDA AMP when
-available, deterministic seeds, validation, and latest/best checkpoints.
-
-For uninterrupted 2,048-token generation, train the separate long-context
-baseline from scratch. It uses 2,048-token dataset chunks and eight-way
-gradient accumulation so its effective token batch remains comparable:
+The active baseline uses a 2,048-token causal context, shifted next-token loss,
+AdamW, warmup plus cosine decay, gradient accumulation and clipping, CUDA AMP
+when available, deterministic seeds, validation, and latest/best checkpoints.
+The explicit equivalents are:
 
 ```powershell
 uv run python scripts/train.py --config configs/training_baseline_2048.toml --smoke-test
@@ -212,8 +213,7 @@ uv run python scripts/train.py --config configs/training_baseline_2048.toml --ti
 uv run python scripts/train.py --config configs/training_baseline_2048.toml
 ```
 
-Its checkpoints are written under `checkpoints/baseline_2048` and do not
-replace the original 1,024-context baseline.
+Its checkpoints are written under `checkpoints/baseline_2048`.
 
 Generate a constrained MIDI sample from a checkpoint:
 
@@ -272,11 +272,10 @@ matched unconditional and prompted samples with:
 uv run python scripts/evaluate.py
 ```
 
-The evaluation writes JSON and Markdown reports under `reports/baseline_1024/`
-and MIDI samples under `outputs/baseline_1024/evaluation/`. Use
-`--min-new-tokens` to prevent
-premature EOS during generation. The command defaults to
-`checkpoints/baseline_1024/best.pt`; it does not load `latest.pt`.
+The evaluation defaults to `checkpoints/baseline_2048/best.pt`, writes JSON and
+Markdown reports under `reports/baseline_2048/`, and writes MIDI samples under
+`outputs/baseline_2048/evaluation/`. EOS is allowed immediately by default;
+use `--min-new-tokens` only when an explicitly forced minimum is desired.
 
 ## Visualize datasets and experiments
 

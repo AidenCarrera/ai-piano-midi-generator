@@ -35,7 +35,6 @@ data/manifests/tokenized_dataset.jsonl
 # Generated reports
 reports/dataset/
 reports/tokenization/
-reports/baseline_1024/
 reports/baseline_2048/
 reports/archive/
 reports/figures/

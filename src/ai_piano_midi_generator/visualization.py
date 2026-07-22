@@ -159,8 +159,8 @@ def dataset_overview_figure(project_root: Path) -> Figure:
 def tokenization_overview_figure(project_root: Path) -> Figure:
     """Show token-family composition and full-performance sequence lengths."""
     analysis = read_json_object(project_root / "reports/tokenization/analysis.json")
-    preparation = read_json_object(
-        project_root / "reports/tokenization/dataset_preparation.json"
+    active_training = read_json_object(
+        project_root / "reports/baseline_2048/training.json"
     )
     rows = read_jsonl_objects(project_root / "data/manifests/tokenized_dataset.jsonl")
     family_counts = _object(
@@ -205,20 +205,14 @@ def tokenization_overview_figure(project_root: Path) -> Figure:
 
     bin_count = min(24, max(10, round(len(token_counts) ** 0.5)))
     axes[1].hist(token_counts, bins=bin_count, color=_CYAN, edgecolor="white")
-    settings = _object(preparation.get("settings"), "settings")
-    context_lengths = settings.get("context_lengths", [512, 1024, 2048])
-    if not isinstance(context_lengths, list):
-        raise ValueError("Expected settings.context_lengths to be a list")
-    for index, context in enumerate(context_lengths):
-        if isinstance(context, bool) or not isinstance(context, (int, float)):
-            continue
-        axes[1].axvline(
-            float(context),
-            color=[_GREEN, _YELLOW, _RED][index % 3],
-            linewidth=1.5,
-            linestyle="--",
-            label=f"{int(context):,}-token context",
-        )
+    active_context = _number(active_training, "context_length")
+    axes[1].axvline(
+        active_context,
+        color=_RED,
+        linewidth=1.5,
+        linestyle="--",
+        label=f"Active {int(active_context):,}-token context",
+    )
     axes[1].set_title("Full-performance sequence lengths")
     axes[1].set_xlabel("Tokens per MIDI file")
     axes[1].set_ylabel("Files")
@@ -346,10 +340,11 @@ def training_loss_figure(project_root: Path) -> Figure:
 
     x_positions = np.arange(len(run_names), dtype=float)
     measurement_specs = [
-        ("Best validation", -0.18, "o", _GREEN),
-        ("Final validation", 0.0, "s", _BLUE),
-        ("Held-out test", 0.18, "D", _RED),
+        ("Best validation", -0.24, _GREEN),
+        ("Final validation", 0.0, _BLUE),
+        ("Held-out test", 0.24, _RED),
     ]
+    run_measurements: dict[str, dict[str, float]] = {}
     for run_index, name in enumerate(run_names):
         training_report = training_reports.get(name)
         evaluation_report = evaluation_reports.get(name)
@@ -368,46 +363,36 @@ def training_loss_figure(project_root: Path) -> Figure:
                 evaluation_report.get("test_metrics"), "test_metrics"
             )
             values["Held-out test"] = _number(test_metrics, "test_loss")
-        for label, offset, marker, color in measurement_specs:
-            if label not in values:
-                continue
-            axes[1].scatter(
-                run_index + offset,
-                values[label],
-                marker=marker,
-                s=62,
-                color=color,
-                zorder=3,
-            )
-            axes[1].annotate(
-                f"{values[label]:.3f}",
-                (run_index + offset, values[label]),
-                xytext=(0, 6),
-                textcoords="offset points",
-                ha="center",
-                fontsize=8,
-            )
+        run_measurements[name] = values
+    maximum_loss = 0.0
+    legend_handles: list[Patch] = []
+    for label, offset, color in measurement_specs:
+        available = [
+            (run_index, run_measurements[name][label])
+            for run_index, name in enumerate(run_names)
+            if label in run_measurements[name]
+        ]
+        if not available:
+            continue
+        positions = np.asarray([index + offset for index, _ in available])
+        losses = [loss for _, loss in available]
+        maximum_loss = max(maximum_loss, max(losses))
+        bars = axes[1].bar(positions, losses, width=0.2, color=color)
+        axes[1].bar_label(
+            bars,
+            labels=[f"{loss:.4f}" for loss in losses],
+            padding=3,
+            fontsize=8,
+        )
+        legend_handles.append(Patch(facecolor=color, label=label))
     axes[1].set_xticks(x_positions, run_names)
     axes[1].set_ylabel("Cross-entropy loss")
-    axes[1].set_title("Validation and test losses")
-    axes[1].legend(
-        handles=[
-            Line2D(
-                [],
-                [],
-                marker=marker,
-                linestyle="none",
-                color=color,
-                label=label,
-            )
-            for label, _, marker, color in measurement_specs
-        ],
-        frameon=False,
-        fontsize=8,
-    )
+    axes[1].set_ylim(0.0, maximum_loss * 1.15 if maximum_loss else 1.0)
+    axes[1].set_title("Available validation and test losses")
+    axes[1].legend(handles=legend_handles, frameon=False, fontsize=8)
     _style_axis(axes[1])
 
-    figure.suptitle("Baseline loss summary", fontsize=15)
+    figure.suptitle("Active model loss summary", fontsize=15)
     return figure
 
 

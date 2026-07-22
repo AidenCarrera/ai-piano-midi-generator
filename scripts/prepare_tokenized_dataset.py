@@ -58,7 +58,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--context-lengths",
         type=int,
         nargs="+",
-        default=[512, 1024, 2048],
+        default=[2048],
         help="Context lengths to evaluate.",
     )
     parser.add_argument(

@@ -59,7 +59,7 @@ class TokenChunkDataset(Dataset[tuple[torch.Tensor, torch.Tensor]]):
         split: Split,
         tokenizer: ExpressiveMidiTokenizer,
         *,
-        context_length: int = 1024,
+        context_length: int = 2048,
         maximum_performances: int | None = None,
         maximum_chunks: int | None = None,
     ) -> None:

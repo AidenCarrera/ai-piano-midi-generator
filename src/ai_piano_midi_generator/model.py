@@ -14,7 +14,7 @@ class TransformerConfig:
     """Architecture settings for the decoder-only baseline."""
 
     vocabulary_size: int = 392
-    context_length: int = 1024
+    context_length: int = 2048
     embedding_size: int = 384
     layer_count: int = 6
     head_count: int = 6

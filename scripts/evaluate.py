@@ -40,7 +40,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--checkpoint",
         type=Path,
-        default=Path("checkpoints/baseline_1024/best.pt"),
+        default=Path("checkpoints/baseline_2048/best.pt"),
     )
     parser.add_argument(
         "--manifest",
@@ -50,27 +50,27 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--json-report",
         type=Path,
-        default=Path("reports/baseline_1024/evaluation.json"),
+        default=Path("reports/baseline_2048/evaluation.json"),
     )
     parser.add_argument(
         "--markdown-report",
         type=Path,
-        default=Path("reports/baseline_1024/evaluation.md"),
+        default=Path("reports/baseline_2048/evaluation.md"),
     )
     parser.add_argument(
         "--output-directory",
         type=Path,
-        default=Path("outputs/baseline_1024/evaluation"),
+        default=Path("outputs/baseline_2048/evaluation"),
     )
     parser.add_argument("--device", choices=["auto", "cuda", "cpu"], default="auto")
     parser.add_argument("--batch-size", type=int, default=4)
     parser.add_argument("--workers", type=int, default=0)
     parser.add_argument("--seeds", type=int, nargs="+", default=[2026, 2027])
     parser.add_argument("--prompt-length", type=int, default=256)
-    parser.add_argument("--max-new-tokens", type=int, default=1024)
-    parser.add_argument("--min-new-tokens", type=int, default=128)
-    parser.add_argument("--temperature", type=float, default=0.95)
-    parser.add_argument("--top-k", type=int, default=40)
+    parser.add_argument("--max-new-tokens", type=int, default=2048)
+    parser.add_argument("--min-new-tokens", type=int, default=0)
+    parser.add_argument("--temperature", type=float, default=0.90)
+    parser.add_argument("--top-k", type=int, default=50)
     parser.add_argument("--top-p", type=float, default=0.95)
     return parser
 

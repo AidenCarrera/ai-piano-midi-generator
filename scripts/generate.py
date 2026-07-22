@@ -57,10 +57,10 @@ def _generation_settings(args: argparse.Namespace) -> dict[str, object]:
 
     return {
         "generation_mode": setting("mode", "mode", "musical"),
-        "maximum_new_tokens": setting("max_new_tokens", "maximum_new_tokens", 256),
+        "maximum_new_tokens": setting("max_new_tokens", "maximum_new_tokens", 2048),
         "minimum_new_tokens": setting("min_new_tokens", "minimum_new_tokens", 0),
-        "temperature": setting("temperature", "temperature", 0.95),
-        "top_k": setting("top_k", "top_k", 40),
+        "temperature": setting("temperature", "temperature", 0.90),
+        "top_k": setting("top_k", "top_k", 50),
         "top_p": setting("top_p", "top_p", 0.95),
         "maximum_duration_seconds": setting(
             "max_duration_seconds", "maximum_duration_seconds", None

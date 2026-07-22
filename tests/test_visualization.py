@@ -65,7 +65,6 @@ def test_generate_project_figures_from_existing_report_shapes(tmp_path: Path) ->
         tmp_path / "reports/tokenization/dataset_preparation.json",
         {
             "settings": {
-                "context_lengths": [512, 1024, 2048],
                 "target_split_ratios": {"train": 0.8, "validation": 0.1, "test": 0.1},
             },
             "split_balance": split_balance,
@@ -81,6 +80,7 @@ def test_generate_project_figures_from_existing_report_shapes(tmp_path: Path) ->
     _write_json(
         tmp_path / "reports/baseline_2048/training.json",
         {
+            "context_length": 2048,
             "steps": 100,
             "initial_loss": 6.0,
             "final_training_loss": 2.2,
@@ -89,7 +89,7 @@ def test_generate_project_figures_from_existing_report_shapes(tmp_path: Path) ->
         },
     )
     _write_json(
-        tmp_path / "reports/baseline_1024/evaluation.json",
+        tmp_path / "reports/baseline_2048/evaluation.json",
         {
             "checkpoint_best_validation_loss": 2.4,
             "test_metrics": {"test_loss": 2.6},
