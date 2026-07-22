@@ -36,8 +36,11 @@ From the project root, create or update the local environment and install all
 runtime and development dependencies:
 
 ```powershell
-uv sync
+uv sync --locked
 ```
+
+The committed `uv.lock` is the reproducibility boundary for dependency
+versions. Use plain `uv sync` only when intentionally updating the lockfile.
 
 ## Verify CUDA
 
@@ -60,6 +63,7 @@ Run static type checking with Pyright:
 
 ```powershell
 uv run pyright
+uv lock --check
 ```
 
 Run the test suite with pytest:
@@ -204,7 +208,11 @@ uv run python scripts/train.py --resume checkpoints/baseline_2048/latest.pt
 
 The active baseline uses a 2,048-token causal context, shifted next-token loss,
 AdamW, warmup plus cosine decay, gradient accumulation and clipping, CUDA AMP
-when available, deterministic seeds, validation, and latest/best checkpoints.
+when available, deterministic kernels and seeds, token-weighted validation, and
+latest/best checkpoints. Training reports record the resolved model/training
+configuration, dependency versions, and a SHA-256 digest of the dataset
+manifest. A resumed report leaves fresh-model loss reduction unset because it
+would not be a meaningful comparison.
 The explicit equivalents are:
 
 ```powershell
@@ -214,6 +222,14 @@ uv run python scripts/train.py --config configs/training_baseline_2048.toml
 ```
 
 Its checkpoints are written under `checkpoints/baseline_2048`.
+
+Checkpoints include optimizer and random-number-generator state and should only
+be loaded from trusted sources: full training-state checkpoints rely on Python
+pickle through PyTorch. Resume restores those states, but it does not restore a
+mid-epoch shuffled-data cursor. Runs are therefore repeatable from the start on
+the same software/hardware stack, while a mid-run resume is trajectory-close
+rather than bitwise identical. PyTorch does not promise identical results
+across releases, devices, or platforms.
 
 Generate a constrained MIDI sample from a checkpoint:
 

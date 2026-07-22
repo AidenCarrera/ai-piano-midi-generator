@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import json
 from collections import Counter, defaultdict
+from collections.abc import Sequence
 from pathlib import Path
 from statistics import mean
-from typing import Sequence
 
 from symusic.core import ScoreSecond, ScoreTick
 

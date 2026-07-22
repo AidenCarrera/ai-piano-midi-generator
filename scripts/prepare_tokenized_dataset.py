@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import argparse
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Sequence
 
 from ai_piano_midi_generator.data.preparation import prepare_tokenized_dataset
 from ai_piano_midi_generator.tokenizer import TokenizerConfig
@@ -110,7 +110,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             f"safe starts={item['safe_noninitial_chunk_percent']}%, "
             f"state carry={item['state_reconstruction_chunk_count']}"
         )
-    print(f"Potential grouping reviews: {len(report['potential_grouping_reviews'])}")
+    reviews = report["potential_grouping_reviews"]
+    assert isinstance(reviews, list)
+    print(f"Potential grouping reviews: {len(reviews)}")
     return 0 if report["group_leakage_free"] else 1
 
 

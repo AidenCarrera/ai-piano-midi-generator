@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import argparse
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Sequence
 
 from ai_piano_midi_generator.data.cleaning import prepare_dataset, status_counts
 from ai_piano_midi_generator.data.validation import validate_final_dataset

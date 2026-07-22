@@ -5,9 +5,10 @@ from __future__ import annotations
 import argparse
 import json
 from collections import Counter
+from collections.abc import Sequence
+from itertools import pairwise
 from pathlib import Path
 from statistics import mean, median
-from typing import Sequence
 
 from symusic.core import ScoreSecond, ScoreTick
 
@@ -69,7 +70,9 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _percentile(sorted_values: list[float | int], percentage: float) -> float | None:
+def _percentile(
+    sorted_values: Sequence[float | int], percentage: float
+) -> float | None:
     if not sorted_values:
         return None
     if len(sorted_values) == 1:
@@ -78,13 +81,13 @@ def _percentile(sorted_values: list[float | int], percentage: float) -> float | 
     lower_index = int(position)
     upper_index = min(lower_index + 1, len(sorted_values) - 1)
     fraction = position - lower_index
-    return float(
+    return (
         sorted_values[lower_index]
         + (sorted_values[upper_index] - sorted_values[lower_index]) * fraction
     )
 
 
-def _statistics(values: list[float | int]) -> dict[str, float | int | None]:
+def _statistics(values: Sequence[float | int]) -> dict[str, float | int | None]:
     ordered = sorted(values)
     return {
         "count": len(values),
@@ -125,6 +128,13 @@ def _write_atomic(path: Path, content: str) -> None:
 
 def _percentage(numerator: int, denominator: int) -> float | None:
     return round(numerator * 100.0 / denominator, 6) if denominator else None
+
+
+def _required_integer(record: dict[str, object], key: str) -> int:
+    value = record.get(key)
+    if not isinstance(value, int):
+        raise ValueError(f"Report field {key} must be an integer")
+    return value
 
 
 def _markdown(report: dict[str, object]) -> str:
@@ -288,7 +298,7 @@ def analyze_tokenization(
 
         decoded_parseable_files += 1
         source_pedal_events = sorted(
-            (float(control.time), int(control.value))
+            (control.time, control.value)
             for track in source_score.tracks
             for control in track.controls
             if control.number == 64
@@ -296,8 +306,7 @@ def analyze_tokenization(
         pedal_values.update(value for _, value in source_pedal_events)
         pedal_states = [value >= 64 for _, value in source_pedal_events]
         redundant_pedal_states += sum(
-            previous == current
-            for previous, current in zip(pedal_states, pedal_states[1:])
+            previous == current for previous, current in pairwise(pedal_states)
         )
         if pedal_states and pedal_states[0]:
             files_starting_with_pedal_down.append(relative_path)
@@ -477,7 +486,7 @@ def analyze_tokenization(
         },
         "largest_sequences": sorted(
             file_summaries,
-            key=lambda item: int(item["token_count"]),
+            key=lambda item: _required_integer(item, "token_count"),
             reverse=True,
         )[:20],
         "files_with_repairs": [
@@ -519,10 +528,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     timing_stats = report["timing_error_seconds_statistics"]
     velocity_stats = report["velocity_absolute_error_statistics"]
     round_trip = report["round_trip"]
+    decoding_repairs = report["decoding_repairs"]
+    issues = report["issues"]
     assert isinstance(sequence_stats, dict)
     assert isinstance(timing_stats, dict)
     assert isinstance(velocity_stats, dict)
     assert isinstance(round_trip, dict)
+    assert isinstance(decoding_repairs, dict)
+    assert isinstance(issues, list)
     print(f"Files analyzed: {report['analyzed_file_count']}")
     print(f"Vocabulary size: {report['vocabulary_size']}")
     print(f"Total tokens: {report['total_token_count']}")
@@ -539,8 +552,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     print(
         f"Semantic event retention: {round_trip['semantic_event_retention_percent']}%"
     )
-    print(f"Decoding repairs: {report['decoding_repairs']['total']}")
-    print(f"Issues: {len(report['issues'])}")
+    print(f"Decoding repairs: {decoding_repairs['total']}")
+    print(f"Issues: {len(issues)}")
     return 1 if report["failed_file_count"] or report["issues"] else 0
 
 

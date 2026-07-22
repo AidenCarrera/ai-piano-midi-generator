@@ -6,13 +6,14 @@ import json
 import math
 import time
 from collections import Counter, defaultdict
+from collections.abc import Iterable
 from contextlib import nullcontext
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, Literal
+from typing import Literal
 
-import torch
 import numpy as np
+import torch
 from symusic.core import ScoreSecond
 from torch.nn import functional as F
 

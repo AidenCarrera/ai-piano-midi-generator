@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import pytest
 import torch
 
 from ai_piano_midi_generator.model import PianoTransformer, TransformerConfig
@@ -15,6 +16,11 @@ def tiny_config() -> TransformerConfig:
         feed_forward_size=64,
         dropout=0.0,
     )
+
+
+def test_config_rejects_nonpositive_head_count() -> None:
+    with pytest.raises(ValueError, match="head count"):
+        TransformerConfig(head_count=0)
 
 
 def test_model_output_shapes_and_shifted_loss() -> None:

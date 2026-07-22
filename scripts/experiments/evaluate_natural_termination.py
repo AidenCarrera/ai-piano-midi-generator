@@ -7,26 +7,25 @@ import json
 import random
 import tomllib
 from collections import Counter
+from collections.abc import Sequence
 from pathlib import Path
 from statistics import fmean, median
-from typing import Literal, Sequence
+from typing import Literal
 
 import numpy as np
-import torch
 
 from ai_piano_midi_generator.evaluation import analyze_generation, write_json_report
 from ai_piano_midi_generator.generation_diagnostics import (
     analyze_token_timing,
     classify_degeneracy,
 )
-from ai_piano_midi_generator.model import PianoTransformer, TransformerConfig
 from ai_piano_midi_generator.sampling import sanitize_prompt_tokens
 from ai_piano_midi_generator.tokenizer import (
     BOS_TOKEN,
     EOS_TOKEN,
     ExpressiveMidiTokenizer,
 )
-from ai_piano_midi_generator.training import load_checkpoint, select_device
+from ai_piano_midi_generator.training import load_model_checkpoint, select_device
 
 GenerationMode = Literal["unconditional", "prompted"]
 
@@ -253,6 +252,13 @@ def _is_degenerate(record: dict[str, object]) -> bool:
     return result
 
 
+def _list_length(record: dict[str, object], name: str) -> int:
+    value = record.get(name, [])
+    if not isinstance(value, list):
+        raise ValueError(f"Generation record {name} must be a list")
+    return len(value)
+
+
 def _group_summary(records: list[dict[str, object]]) -> dict[str, object]:
     if not records:
         raise ValueError("Cannot summarize an empty group")
@@ -356,9 +362,7 @@ def _report(
             "cap_outputs_with_forced_note_or_pedal_closure": closure_count,
             "degenerate_count": sum(_is_degenerate(record) for record in records),
             "safeguard_intervention_count": sum(
-                len(record.get("safeguard_interventions", []))
-                for record in records
-                if isinstance(record.get("safeguard_interventions"), list)
+                _list_length(record, "safeguard_interventions") for record in records
             ),
             "human_audition_status": "pending",
         },
@@ -584,14 +588,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     }
 
     device = select_device(args.device)
-    checkpoint = torch.load(args.checkpoint, map_location="cpu", weights_only=False)
-    if not isinstance(checkpoint, dict):
-        raise ValueError("Checkpoint must be a dictionary")
-    model_settings = checkpoint.get("model_config")
-    if not isinstance(model_settings, dict):
-        raise ValueError("Checkpoint is missing model_config")
-    model = PianoTransformer(TransformerConfig(**model_settings)).to(device)
-    load_checkpoint(args.checkpoint, model=model, map_location=device)
+    model, _ = load_model_checkpoint(args.checkpoint, device=device)
     model.eval()
 
     total = 2 * len(temperatures) * len(seeds)

@@ -3,14 +3,19 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import math
+import platform
 import tomllib
+from collections.abc import Sequence
 from dataclasses import replace
 from functools import partial
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import Sequence
+from typing import Any
 
+import numpy as np
 import torch
 from torch.utils.data import DataLoader
 
@@ -48,7 +53,7 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _mapping(value: object, name: str) -> dict[str, object]:
+def _mapping(value: object, name: str) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise ValueError(f"Missing TOML table: {name}")
     return value
@@ -88,7 +93,14 @@ def _loader(
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    args = build_parser().parse_args(argv)
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    if args.resume is not None and (args.smoke_test or args.tiny_overfit):
+        parser.error("--resume cannot be combined with diagnostic training modes")
+    if args.max_steps is not None and args.max_steps <= 0:
+        parser.error("--max-steps must be positive")
+    if args.overfit_chunks <= 0 or args.overfit_steps <= 0:
+        parser.error("tiny-overfit chunk and step counts must be positive")
     raw = tomllib.loads(args.config.read_text(encoding="utf-8"))
     data_config = _mapping(raw.get("data"), "data")
     model_config = TransformerConfig(**_mapping(raw.get("model"), "model"))
@@ -169,12 +181,16 @@ def main(argv: Sequence[str] | None = None) -> int:
         pin_memory=pin_memory,
     )
     model = PianoTransformer(model_config).to(device)
-    initial_loss = evaluate_loss(
-        model,
-        validation_loader,
-        device=device,
-        maximum_batches=training_config.evaluation_batches,
-        amp=training_config.amp,
+    initial_loss = (
+        None
+        if args.resume is not None
+        else evaluate_loss(
+            model,
+            validation_loader,
+            device=device,
+            maximum_batches=training_config.evaluation_batches,
+            amp=training_config.amp,
+        )
     )
 
     configured_checkpoint_directory = Path(str(output_config["checkpoint_directory"]))
@@ -193,7 +209,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     else:
         checkpoint_directory = configured_checkpoint_directory
         report_path = configured_report_path
-        step_limit = args.max_steps or training_config.maximum_steps
+        step_limit = (
+            training_config.maximum_steps if args.max_steps is None else args.max_steps
+        )
 
     summary = train_model(
         model=model,
@@ -210,7 +228,19 @@ def main(argv: Sequence[str] | None = None) -> int:
     report: dict[str, object] = {
         **summary,
         "initial_loss": initial_loss,
-        "initial_perplexity": float(torch.exp(torch.tensor(initial_loss))),
+        "initial_perplexity": (
+            math.exp(min(20.0, initial_loss)) if initial_loss is not None else None
+        ),
+        "model_config": model_config.to_dict(),
+        "training_config": training_config.to_dict(),
+        "dataset_manifest": manifest.as_posix(),
+        "dataset_manifest_sha256": hashlib.sha256(manifest.read_bytes()).hexdigest(),
+        "environment": {
+            "python": platform.python_version(),
+            "numpy": np.__version__,
+            "torch": torch.__version__,
+            "cuda_runtime": torch.version.cuda,
+        },
         "context_length": context_length,
         "train_chunk_count": len(train_dataset),
         "validation_chunk_count": len(validation_dataset),
@@ -221,12 +251,18 @@ def main(argv: Sequence[str] | None = None) -> int:
         else "full",
     }
     final_loss = float(summary["final_validation_loss"])
-    report["loss_reduction_percent"] = round(
-        (initial_loss - final_loss) * 100.0 / initial_loss, 6
+    report["loss_reduction_percent"] = (
+        round((initial_loss - final_loss) * 100.0 / initial_loss, 6)
+        if initial_loss is not None
+        else None
     )
     _write_report(report_path, report)
     print(json.dumps(report, indent=2, sort_keys=True))
-    if args.tiny_overfit and report["loss_reduction_percent"] < 20.0:
+    if (
+        args.tiny_overfit
+        and isinstance(report["loss_reduction_percent"], float)
+        and report["loss_reduction_percent"] < 20.0
+    ):
         print("Tiny-overfit loss did not fall by the required 20%.")
         return 1
     return 0

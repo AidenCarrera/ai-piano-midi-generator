@@ -5,12 +5,11 @@ from __future__ import annotations
 import argparse
 import json
 from collections import Counter, defaultdict
+from collections.abc import Sequence
 from functools import partial
 from pathlib import Path
 from statistics import fmean
-from typing import Sequence
 
-import torch
 from torch.utils.data import DataLoader
 
 from ai_piano_midi_generator.dataset import (
@@ -24,7 +23,6 @@ from ai_piano_midi_generator.evaluation import (
     write_json_report,
     write_markdown_report,
 )
-from ai_piano_midi_generator.model import PianoTransformer, TransformerConfig
 from ai_piano_midi_generator.tokenizer import (
     BOS_TOKEN,
     EOS_TOKEN,
@@ -32,7 +30,7 @@ from ai_piano_midi_generator.tokenizer import (
     PEDAL_UP_TOKEN,
     ExpressiveMidiTokenizer,
 )
-from ai_piano_midi_generator.training import load_checkpoint, select_device
+from ai_piano_midi_generator.training import load_model_checkpoint, select_device
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -148,8 +146,19 @@ def _prompt_candidates(
 
 
 def _mean_note_count(records: list[dict[str, object]], mode: str) -> float:
-    values = [int(record["note_count"]) for record in records if record["mode"] == mode]
+    values = [
+        _record_integer(record, "note_count")
+        for record in records
+        if record["mode"] == mode
+    ]
     return fmean(values) if values else 0.0
+
+
+def _record_integer(record: dict[str, object], key: str) -> int:
+    value = record.get(key)
+    if not isinstance(value, int):
+        raise ValueError(f"Generation record {key} must be an integer")
+    return value
 
 
 def _aggregate_generation_counts(
@@ -170,12 +179,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         raise ValueError("Batch size and prompt length must be positive")
     device = select_device(args.device)
     tokenizer = ExpressiveMidiTokenizer()
-    checkpoint = torch.load(args.checkpoint, map_location="cpu", weights_only=False)
-    model_settings = checkpoint.get("model_config")
-    if not isinstance(model_settings, dict):
-        raise ValueError("Checkpoint is missing model_config")
-    model = PianoTransformer(TransformerConfig(**model_settings)).to(device)
-    load_checkpoint(args.checkpoint, model=model, map_location=device)
+    model, checkpoint = load_model_checkpoint(args.checkpoint, device=device)
     model.eval()
 
     test_dataset = TokenChunkDataset(
@@ -248,7 +252,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "unconditional_mean_note_count": _mean_note_count(generations, "unconditional"),
         "prompted_mean_note_count": _mean_note_count(generations, "prompted"),
         "outputs_with_cc64": sum(
-            int(record["cc64_event_count"]) > 0 for record in generations
+            _record_integer(record, "cc64_event_count") > 0 for record in generations
         ),
         "blocked_invalid_events": _aggregate_generation_counts(
             generations, "blocked_invalid_events"

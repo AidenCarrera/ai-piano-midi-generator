@@ -5,8 +5,8 @@ from __future__ import annotations
 import argparse
 import json
 from collections import defaultdict
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Sequence
 
 import numpy as np
 import torch
@@ -19,7 +19,7 @@ from ai_piano_midi_generator.generation_diagnostics import (
     derive_degeneracy_thresholds,
     summarize_diagnostics,
 )
-from ai_piano_midi_generator.model import PianoTransformer, TransformerConfig
+from ai_piano_midi_generator.model import PianoTransformer
 from ai_piano_midi_generator.tokenizer import (
     BOS_TOKEN,
     EOS_TOKEN,
@@ -27,7 +27,7 @@ from ai_piano_midi_generator.tokenizer import (
     PEDAL_UP_TOKEN,
     ExpressiveMidiTokenizer,
 )
-from ai_piano_midi_generator.training import load_checkpoint, select_device
+from ai_piano_midi_generator.training import load_model_checkpoint, select_device
 
 COMPARISON_TOKEN_COUNT = 2048
 
@@ -463,14 +463,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     thresholds = derive_degeneracy_thresholds(train_windows)
 
     device = select_device(args.device)
-    checkpoint = torch.load(args.checkpoint, map_location="cpu", weights_only=False)
-    if not isinstance(checkpoint, dict):
-        raise ValueError("Checkpoint must contain a dictionary")
-    model_config = checkpoint.get("model_config")
-    if not isinstance(model_config, dict):
-        raise ValueError("Checkpoint is missing model_config")
-    model = PianoTransformer(TransformerConfig(**model_config)).to(device)
-    load_checkpoint(args.checkpoint, model=model, map_location=device)
+    model, _ = load_model_checkpoint(args.checkpoint, device=device)
     model.eval()
     sweep = json.loads(args.sweep_report.read_text(encoding="utf-8"))
     if not isinstance(sweep, dict):

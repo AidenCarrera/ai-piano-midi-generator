@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 import torch
 
 from ai_piano_midi_generator.model import PianoTransformer, TransformerConfig
@@ -10,8 +11,11 @@ from ai_piano_midi_generator.tokenizer import BOS_TOKEN, ExpressiveMidiTokenizer
 from ai_piano_midi_generator.training import (
     TrainingConfig,
     build_optimizer,
+    evaluate_loss,
     load_checkpoint,
+    load_model_checkpoint,
     save_checkpoint,
+    train_model,
 )
 
 
@@ -79,6 +83,72 @@ def test_checkpoint_round_trip_restores_model_and_optimizer(tmp_path: Path) -> N
     assert loaded["best_validation_loss"] == 1.25
     for name, value in model.state_dict().items():
         assert torch.equal(value, expected[name])
+
+    inference_model, metadata = load_model_checkpoint(path, device=torch.device("cpu"))
+    assert metadata["step"] == 3
+    for name, value in inference_model.state_dict().items():
+        assert torch.equal(value, expected[name])
+
+
+def test_evaluate_loss_is_token_weighted_and_preserves_mode() -> None:
+    torch.manual_seed(17)
+    model = small_model(32).eval()
+    first = (torch.tensor([[1, 2]]), torch.tensor([[2, -100]]))
+    second = (
+        torch.tensor([[3, 4, 5, 6]]),
+        torch.tensor([[4, 5, 6, 7]]),
+    )
+    with torch.inference_mode():
+        _, first_loss = model(*first)
+        _, second_loss = model(*second)
+    assert first_loss is not None and second_loss is not None
+    expected = (float(first_loss) + 4 * float(second_loss)) / 5
+
+    observed = evaluate_loss(
+        model,
+        [first, second],
+        device=torch.device("cpu"),
+        maximum_batches=2,
+        amp=False,
+    )
+
+    assert observed == pytest.approx(expected)
+    assert model.training is False
+
+
+def test_training_config_rejects_invalid_optimizer_settings() -> None:
+    with pytest.raises(ValueError, match="weight_decay"):
+        TrainingConfig(weight_decay=-0.1)
+    with pytest.raises(ValueError, match="gradient_clip_norm"):
+        TrainingConfig(gradient_clip_norm=0.0)
+    with pytest.raises(ValueError, match="data_loader_workers"):
+        TrainingConfig(data_loader_workers=-1)
+
+
+def test_train_model_runs_one_step_and_writes_resumable_checkpoints(
+    tmp_path: Path,
+) -> None:
+    model = small_model(32)
+    config = small_training_config()
+    batch = (
+        torch.tensor([[1, 2, 3, 4]], dtype=torch.long),
+        torch.tensor([[2, 3, 4, 5]], dtype=torch.long),
+    )
+
+    summary = train_model(
+        model=model,
+        train_loader=[batch],
+        validation_loader=[batch],
+        training_config=config,
+        device=torch.device("cpu"),
+        checkpoint_directory=tmp_path,
+        maximum_steps=1,
+    )
+
+    assert summary["steps"] == 1
+    assert summary["final_validation_loss"] > 0
+    assert (tmp_path / "best.pt").is_file()
+    assert (tmp_path / "latest.pt").is_file()
 
 
 def test_sampling_is_deterministic_and_decodes_without_repairs() -> None:

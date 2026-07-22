@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from collections import Counter
-from typing import Iterable, Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
+from itertools import pairwise
 
 import numpy as np
 
@@ -99,8 +100,7 @@ def analyze_token_timing(
     if note_on_steps:
         time_before_first = note_on_steps[0] * resolution
         note_gaps = [
-            (right - left) * resolution
-            for left, right in zip(note_on_steps, note_on_steps[1:])
+            (right - left) * resolution for left, right in pairwise(note_on_steps)
         ]
         trailing_silence = (elapsed_steps - note_on_steps[-1]) * resolution
         maximum_silence = max([time_before_first, trailing_silence, *note_gaps])

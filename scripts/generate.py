@@ -5,17 +5,16 @@ from __future__ import annotations
 import argparse
 import json
 import tomllib
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Literal, Sequence, cast
+from typing import Literal, cast
 
 import numpy as np
-import torch
 from symusic.core import ScoreTick
 
-from ai_piano_midi_generator.model import PianoTransformer, TransformerConfig
 from ai_piano_midi_generator.sampling import sample_tokens
 from ai_piano_midi_generator.tokenizer import BOS_TOKEN, ExpressiveMidiTokenizer
-from ai_piano_midi_generator.training import load_checkpoint, select_device
+from ai_piano_midi_generator.training import load_model_checkpoint, select_device
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -121,12 +120,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.prompt_array and args.prompt_midi:
         raise ValueError("Choose only one prompt source")
     device = select_device(args.device)
-    checkpoint = torch.load(args.checkpoint, map_location="cpu", weights_only=False)
-    model_settings = checkpoint.get("model_config")
-    if not isinstance(model_settings, dict):
-        raise ValueError("Checkpoint is missing model_config")
-    model = PianoTransformer(TransformerConfig(**model_settings)).to(device)
-    load_checkpoint(args.checkpoint, model=model, map_location=device)
+    model, _ = load_model_checkpoint(args.checkpoint, device=device)
     model.eval()
     tokenizer = ExpressiveMidiTokenizer()
 

@@ -24,8 +24,10 @@ class TransformerConfig:
     def __post_init__(self) -> None:
         if self.vocabulary_size <= 0 or self.context_length <= 0:
             raise ValueError("Vocabulary and context sizes must be positive")
-        if self.embedding_size <= 0 or self.layer_count <= 0:
-            raise ValueError("Embedding size and layer count must be positive")
+        if self.embedding_size <= 0 or self.layer_count <= 0 or self.head_count <= 0:
+            raise ValueError(
+                "Embedding size, layer count, and head count must be positive"
+            )
         if self.embedding_size % self.head_count:
             raise ValueError("embedding_size must be divisible by head_count")
         if self.feed_forward_size < self.embedding_size:

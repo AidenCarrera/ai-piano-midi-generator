@@ -99,7 +99,7 @@ def dataset_overview_figure(project_root: Path) -> Figure:
     final_statuses = _object(validation.get("run_status_counts"), "run_status_counts")
 
     figure, axes_value = plt.subplots(1, 3, figsize=(13.5, 4.3), layout="constrained")
-    axes = cast(np.ndarray[Any, Any], np.asarray(axes_value)).ravel().tolist()
+    axes = np.asarray(axes_value).ravel().tolist()
 
     raw_labels = ["Accepted", "Review", "Rejected"]
     raw_values = [
@@ -193,7 +193,7 @@ def tokenization_overview_figure(project_root: Path) -> Figure:
         raise ValueError("Tokenized dataset manifest is empty")
 
     figure, axes_value = plt.subplots(1, 2, figsize=(12.5, 4.6), layout="constrained")
-    axes = cast(np.ndarray[Any, Any], np.asarray(axes_value)).ravel().tolist()
+    axes = np.asarray(axes_value).ravel().tolist()
 
     bars = axes[0].bar(family_labels, family_values, color=_BLUE)
     _label_bars(axes[0], bars)
@@ -295,7 +295,7 @@ def training_loss_figure(project_root: Path) -> Figure:
     colors = [_BLUE, _GREEN, _PURPLE, _YELLOW]
 
     figure, axes_value = plt.subplots(1, 2, figsize=(12.5, 4.7), layout="constrained")
-    axes = cast(np.ndarray[Any, Any], np.asarray(axes_value)).ravel().tolist()
+    axes = np.asarray(axes_value).ravel().tolist()
 
     for index, (name, report) in enumerate(training_reports.items()):
         steps = _number(report, "steps")
@@ -345,7 +345,7 @@ def training_loss_figure(project_root: Path) -> Figure:
         ("Held-out test", 0.24, _RED),
     ]
     run_measurements: dict[str, dict[str, float]] = {}
-    for run_index, name in enumerate(run_names):
+    for name in run_names:
         training_report = training_reports.get(name)
         evaluation_report = evaluation_reports.get(name)
         values: dict[str, float] = {}
@@ -463,7 +463,7 @@ def generated_vs_test_figure(project_root: Path) -> Figure:
     ]
 
     figure, axes_value = plt.subplots(2, 2, figsize=(11.5, 8.2), layout="constrained")
-    axes = cast(np.ndarray[Any, Any], np.asarray(axes_value)).ravel().tolist()
+    axes = np.asarray(axes_value).ravel().tolist()
     positions = [1.0, 2.0]
     mode_colors = [_BLUE, _PURPLE]
 
@@ -536,7 +536,7 @@ def generated_vs_test_figure(project_root: Path) -> Figure:
 
     axes[0].legend(
         handles=[
-            Patch(facecolor=_GREEN, alpha=0.14, label="Test p01–p99"),
+            Patch(facecolor=_GREEN, alpha=0.14, label="Test p01-p99"),
             Line2D([], [], color=_GREEN, linestyle="--", label="Test median"),
             Line2D(
                 [],

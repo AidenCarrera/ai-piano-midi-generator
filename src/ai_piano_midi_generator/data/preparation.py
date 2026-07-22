@@ -8,10 +8,11 @@ import random
 import re
 import unicodedata
 from collections import Counter, defaultdict, deque
+from collections.abc import Sequence
 from dataclasses import dataclass
 from difflib import SequenceMatcher
 from pathlib import Path
-from typing import Literal, Sequence
+from typing import Literal
 
 import numpy as np
 

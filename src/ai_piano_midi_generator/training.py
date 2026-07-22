@@ -6,10 +6,11 @@ import json
 import math
 import random
 import time
+from collections.abc import Iterable
 from contextlib import nullcontext
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 import numpy as np
 import torch
@@ -28,7 +29,6 @@ class TrainingConfig:
     warmup_steps: int = 500
     weight_decay: float = 0.1
     gradient_clip_norm: float = 1.0
-    dropout: float = 0.1
     evaluation_interval: int = 250
     evaluation_batches: int = 40
     checkpoint_interval: int = 500
@@ -55,6 +55,12 @@ class TrainingConfig:
             raise ValueError("minimum_learning_rate cannot exceed learning_rate")
         if self.warmup_steps < 0 or self.warmup_steps >= self.maximum_steps:
             raise ValueError("warmup_steps must be in [0, maximum_steps)")
+        if self.weight_decay < 0:
+            raise ValueError("weight_decay must be non-negative")
+        if self.gradient_clip_norm <= 0:
+            raise ValueError("gradient_clip_norm must be positive")
+        if self.data_loader_workers < 0:
+            raise ValueError("data_loader_workers must be non-negative")
 
     def to_dict(self) -> dict[str, int | float | bool]:
         return asdict(self)
@@ -69,7 +75,7 @@ def set_deterministic_seed(seed: int) -> None:
         torch.cuda.manual_seed_all(seed)
     torch.backends.cudnn.benchmark = False
     torch.backends.cudnn.deterministic = True
-    torch.use_deterministic_algorithms(True, warn_only=True)
+    torch.use_deterministic_algorithms(True)
 
 
 def select_device(requested: str = "auto") -> torch.device:
@@ -122,7 +128,7 @@ def _autocast(device: torch.device, enabled: bool):
     return nullcontext()
 
 
-@torch.no_grad()
+@torch.inference_mode()
 def evaluate_loss(
     model: PianoTransformer,
     batches: Iterable[tuple[torch.Tensor, torch.Tensor]],
@@ -132,21 +138,31 @@ def evaluate_loss(
     amp: bool,
 ) -> float:
     """Evaluate mean next-token loss over a bounded number of batches."""
+    if maximum_batches <= 0:
+        raise ValueError("maximum_batches must be positive")
+    was_training = model.training
     model.eval()
-    losses: list[float] = []
-    for batch_index, (inputs, targets) in enumerate(batches):
-        if batch_index >= maximum_batches:
-            break
-        inputs = inputs.to(device, non_blocking=True)
-        targets = targets.to(device, non_blocking=True)
-        with _autocast(device, amp):
-            _, loss = model(inputs, targets)
-        assert loss is not None
-        losses.append(float(loss.detach().cpu()))
-    model.train()
-    if not losses:
+    total_loss = 0.0
+    evaluated_tokens = 0
+    try:
+        for batch_index, (inputs, targets) in enumerate(batches):
+            if batch_index >= maximum_batches:
+                break
+            inputs = inputs.to(device, non_blocking=True)
+            targets = targets.to(device, non_blocking=True)
+            token_count = int((targets != -100).sum().item())
+            if token_count == 0:
+                continue
+            with _autocast(device, amp):
+                _, loss = model(inputs, targets)
+            assert loss is not None
+            total_loss += float(loss.detach().cpu()) * token_count
+            evaluated_tokens += token_count
+    finally:
+        model.train(was_training)
+    if evaluated_tokens == 0:
         raise ValueError("Evaluation loader produced no batches")
-    return sum(losses) / len(losses)
+    return total_loss / evaluated_tokens
 
 
 def save_checkpoint(
@@ -160,7 +176,7 @@ def save_checkpoint(
     model_config: TransformerConfig,
     training_config: TrainingConfig,
 ) -> None:
-    """Atomically save all state needed for an exact training resume."""
+    """Atomically save model, optimizer, scaler, configuration, and RNG state."""
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(f".{path.name}.tmp")
     state = {
@@ -186,6 +202,16 @@ def save_checkpoint(
             temporary.unlink()
 
 
+def _read_checkpoint(
+    path: Path, *, map_location: torch.device | str = "cpu"
+) -> dict[str, Any]:
+    """Read a trusted project checkpoint and validate its outer structure."""
+    checkpoint = torch.load(path, map_location=map_location, weights_only=False)
+    if not isinstance(checkpoint, dict):
+        raise ValueError(f"Invalid checkpoint: {path}")
+    return checkpoint
+
+
 def load_checkpoint(
     path: Path,
     *,
@@ -196,9 +222,7 @@ def load_checkpoint(
     restore_rng: bool = False,
 ) -> dict[str, Any]:
     """Load model and optional optimizer/scaler state from a checkpoint."""
-    checkpoint = torch.load(path, map_location=map_location, weights_only=False)
-    if not isinstance(checkpoint, dict):
-        raise ValueError(f"Invalid checkpoint: {path}")
+    checkpoint = _read_checkpoint(path, map_location=map_location)
     model.load_state_dict(checkpoint["model"])
     if optimizer is not None:
         optimizer.load_state_dict(checkpoint["optimizer"])
@@ -219,6 +243,22 @@ def load_checkpoint(
                 raise ValueError("Checkpoint cuda_rng_state is invalid")
             torch.cuda.set_rng_state_all([state.cpu() for state in cuda_state])
     return checkpoint
+
+
+def load_model_checkpoint(
+    path: Path, *, device: torch.device
+) -> tuple[PianoTransformer, dict[str, Any]]:
+    """Load a model and metadata from one trusted project checkpoint read."""
+    checkpoint = _read_checkpoint(path, map_location="cpu")
+    model_settings = checkpoint.get("model_config")
+    if not isinstance(model_settings, dict):
+        raise ValueError("Checkpoint is missing model_config")
+    model = PianoTransformer(TransformerConfig(**model_settings))
+    model_state = checkpoint.get("model")
+    if not isinstance(model_state, dict):
+        raise ValueError("Checkpoint is missing model state")
+    model.load_state_dict(model_state)
+    return model.to(device), checkpoint
 
 
 def _next_batch(
@@ -262,7 +302,15 @@ def train_model(
         start_step = int(checkpoint["step"])
         best_validation_loss = float(checkpoint["best_validation_loss"])
 
-    step_limit = maximum_steps or training_config.maximum_steps
+    step_limit = (
+        training_config.maximum_steps if maximum_steps is None else maximum_steps
+    )
+    if step_limit <= 0:
+        raise ValueError("maximum_steps must be positive")
+    if start_step >= step_limit:
+        raise ValueError(
+            f"Checkpoint step {start_step} has already reached step limit {step_limit}"
+        )
     checkpoint_directory.mkdir(parents=True, exist_ok=True)
     if device.type == "cuda":
         torch.cuda.reset_peak_memory_stats(device)

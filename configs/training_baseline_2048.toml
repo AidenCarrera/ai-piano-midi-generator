@@ -20,7 +20,6 @@ minimum_learning_rate = 0.00003
 warmup_steps = 250
 weight_decay = 0.10
 gradient_clip_norm = 1.0
-dropout = 0.10
 evaluation_interval = 125
 evaluation_batches = 40
 checkpoint_interval = 250
@@ -32,10 +31,3 @@ amp = true
 [output]
 checkpoint_directory = "checkpoints/baseline_2048"
 training_report = "reports/baseline_2048/training.json"
-
-[sampling]
-maximum_new_tokens = 2048
-temperature = 0.90
-top_k = 50
-top_p = 0.95
-seed = 2026
