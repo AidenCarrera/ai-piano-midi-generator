@@ -137,15 +137,15 @@ def inspect_midi_file(path: Path, input_dir: Path) -> FileInspection:
         valid_pitched_note_count = 0
 
         result.parse_success = True
-        result.duration_seconds = round(float(score.end()), 6)
+        result.duration_seconds = round(score.end(), 6)
         result.track_count = len(score.tracks)
         result.track_names = [track.name for track in score.tracks]
         result.tempo_event_count = len(score.tempos)
         result.time_signature_changes = [
             {
-                "time_seconds": round(float(event.time), 6),
-                "numerator": int(event.numerator),
-                "denominator": int(event.denominator),
+                "time_seconds": round(event.time, 6),
+                "numerator": event.numerator,
+                "denominator": event.denominator,
             }
             for event in score.time_signatures
         ]
@@ -154,9 +154,9 @@ def inspect_midi_file(path: Path, input_dir: Path) -> FileInspection:
             track_note_count = len(track.notes)
             result.note_count += track_note_count
             if track_note_count:
-                programs.add(int(track.program))
+                programs.add(track.program)
                 if not track.is_drum and track.program not in PIANO_PROGRAMS:
-                    non_piano_programs.add(int(track.program))
+                    non_piano_programs.add(track.program)
 
             result.track_note_counts.append(
                 {
@@ -171,7 +171,7 @@ def inspect_midi_file(path: Path, input_dir: Path) -> FileInspection:
                     {
                         "track_index": track_index,
                         "name": track.name,
-                        "program": int(track.program),
+                        "program": track.program,
                         "note_count": track_note_count,
                     }
                 )
@@ -181,10 +181,10 @@ def inspect_midi_file(path: Path, input_dir: Path) -> FileInspection:
             )
 
             for note_index, note in enumerate(track.notes):
-                pitch = int(note.pitch)
-                velocity = int(note.velocity)
-                time = float(note.time)
-                duration = float(note.duration)
+                pitch = note.pitch
+                velocity = note.velocity
+                time = note.time
+                duration = note.duration
                 pitches.append(pitch)
                 velocities.append(velocity)
                 reasons = _note_issues(

@@ -218,15 +218,15 @@ def validate_final_dataset(
         for track in score_tick.tracks:
             cc64_count += sum(1 for control in track.controls if control.number == 64)
             for note in track.notes:
-                pitches.append(int(note.pitch))
-                velocities.append(int(note.velocity))
+                pitches.append(note.pitch)
+                velocities.append(note.velocity)
                 if note.pitch < 21 or note.pitch > 108:
-                    pitch_outliers.append(int(note.pitch))
+                    pitch_outliers.append(note.pitch)
                 if note.duration <= 0:
                     invalid_count += 1
         for track in score_second.tracks:
-            note_durations_seconds.extend(float(note.duration) for note in track.notes)
-        file_durations_seconds.append(float(score_second.end()))
+            note_durations_seconds.extend(note.duration for note in track.notes)
+        file_durations_seconds.append(score_second.end())
         if cc64_count:
             files_with_cc64.append(relative_path)
             total_cc64_events += cc64_count

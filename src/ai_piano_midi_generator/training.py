@@ -294,7 +294,9 @@ def train_model(
                 _, loss = model(inputs, targets)
                 assert loss is not None
                 scaled_loss = loss / training_config.gradient_accumulation_steps
-            scaler.scale(scaled_loss).backward()
+            scaled_loss_tensor = scaler.scale(scaled_loss)
+            assert isinstance(scaled_loss_tensor, torch.Tensor)
+            scaled_loss_tensor.backward()
             accumulated_loss += float(loss.detach().cpu())
         scaler.unscale_(optimizer)
         torch.nn.utils.clip_grad_norm_(

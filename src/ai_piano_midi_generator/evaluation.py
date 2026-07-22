@@ -288,7 +288,7 @@ def analyze_generation(
             for control in track.controls
             if control.number == 64
         )
-        duration_seconds = float(score.end())
+        duration_seconds = score.end()
         parse_valid = True
     except Exception as exc:  # pragma: no cover - defensive report path
         parse_error = f"{type(exc).__name__}: {exc}"

@@ -370,8 +370,8 @@ def _track_details(index: int, track: TrackTick) -> dict[str, object]:
     return {
         "track_index": index,
         "name": track.name,
-        "program": int(track.program),
-        "is_drum": bool(track.is_drum),
+        "program": track.program,
+        "is_drum": track.is_drum,
         "note_count": len(track.notes),
         "cc64_event_count": sum(
             1 for control in track.controls if control.number == 64
@@ -391,10 +391,10 @@ def _clean_selected_track(
                     "track_index": source_index,
                     "track_name": track.name,
                     "note_index": note_index,
-                    "time_ticks": int(note.time),
-                    "duration_ticks": int(note.duration),
-                    "pitch": int(note.pitch),
-                    "velocity": int(note.velocity),
+                    "time_ticks": note.time,
+                    "duration_ticks": note.duration,
+                    "pitch": note.pitch,
+                    "velocity": note.velocity,
                     "reason": "zero_or_negative_duration",
                 }
             )
@@ -512,7 +512,7 @@ def _parse_raw_midi_track(data: bytes, track_index: int) -> _RawMidiTrackEvents:
         if event_type == 0x90 and event_data[1] > 0:
             note_counts[channel] += 1
         elif event_type == 0xB0 and event_data[0] == 64:
-            cc64_events.append((absolute_time, int(event_data[1])))
+            cc64_events.append((absolute_time, event_data[1]))
 
     return _RawMidiTrackEvents(
         index=track_index,
@@ -767,7 +767,7 @@ def clean_midi_file(
             (
                 f"selected_track:{index}",
                 [
-                    (int(control.time), int(control.value))
+                    (control.time, control.value)
                     for control in cleaned_track.controls
                     if control.number == 64
                 ],
@@ -780,7 +780,7 @@ def clean_midi_file(
             (
                 f"cc64_carrier_track:{index}",
                 [
-                    (int(control.time), int(control.value))
+                    (control.time, control.value)
                     for control in score.tracks[index].controls
                     if control.number == 64
                 ],

@@ -137,7 +137,7 @@ class _Event:
 
 
 def _round_half_up(value: float) -> int:
-    return int(floor(value + 0.5))
+    return floor(value + 0.5)
 
 
 class ExpressiveMidiTokenizer:
@@ -214,21 +214,21 @@ class ExpressiveMidiTokenizer:
         minimum_duration_repairs = 0
         for track in score.tracks:
             for note in track.notes:
-                start_time = float(note.time)
-                end_time = float(note.time + note.duration)
+                start_time = note.time
+                end_time = note.time + note.duration
                 start_step = self._time_to_step(start_time)
                 end_step = self._time_to_step(end_time)
                 if end_step <= start_step:
                     end_step = start_step + 1
                     minimum_duration_repairs += 1
-                velocity = int(note.velocity)
+                velocity = note.velocity
                 velocity_bin = self.velocity_to_bin(velocity)
                 events.append(
                     _Event(
                         step=start_step,
                         true_time=start_time,
                         kind="note_on",
-                        pitch=int(note.pitch),
+                        pitch=note.pitch,
                         velocity_bin=velocity_bin,
                         velocity=velocity,
                     )
@@ -238,13 +238,13 @@ class ExpressiveMidiTokenizer:
                         step=end_step,
                         true_time=end_time,
                         kind="note_off",
-                        pitch=int(note.pitch),
+                        pitch=note.pitch,
                     )
                 )
             for control in track.controls:
                 if control.number != 64:
                     continue
-                time = float(control.time)
+                time = control.time
                 events.append(
                     _Event(
                         step=self._time_to_step(time),

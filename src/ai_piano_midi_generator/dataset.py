@@ -91,8 +91,7 @@ class TokenChunkDataset(Dataset[tuple[torch.Tensor, torch.Tensor]]):
             plans = plan_state_safe_chunks(tokens, context_length + 1)
             for plan in plans:
                 reconstruction_ids = tuple(
-                    int(tokenizer.token_to_id[token])
-                    for token in plan.reconstruction_tokens
+                    tokenizer.token_to_id[token] for token in plan.reconstruction_tokens
                 )
                 chunks.append(
                     ChunkReference(

@@ -1,1 +1,2 @@
-"""AI piano MIDI generator package."""
+def main() -> None:
+    print("Hello from ai-piano-midi-generator!")
