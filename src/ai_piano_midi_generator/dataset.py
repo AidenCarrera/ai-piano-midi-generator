@@ -143,11 +143,19 @@ def collate_token_chunks(
     batch: Sequence[tuple[torch.Tensor, torch.Tensor]],
     *,
     pad_token_id: int = 0,
+    padded_length: int | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Right-pad inputs and mask padded targets for next-token loss."""
     if not batch:
         raise ValueError("Cannot collate an empty batch")
     maximum_length = max(inputs.numel() for inputs, _ in batch)
+    if padded_length is not None:
+        if padded_length < maximum_length:
+            raise ValueError(
+                f"padded_length {padded_length} is shorter than batch maximum "
+                f"{maximum_length}"
+            )
+        maximum_length = padded_length
     input_batch = torch.full(
         (len(batch), maximum_length), pad_token_id, dtype=torch.long
     )

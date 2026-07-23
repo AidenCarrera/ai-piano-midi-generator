@@ -77,6 +77,8 @@ def _loader(
     workers: int,
     seed: int,
     pin_memory: bool,
+    padded_length: int,
+    drop_last: bool,
 ) -> DataLoader[tuple[torch.Tensor, torch.Tensor]]:
     generator = torch.Generator().manual_seed(seed)
     return DataLoader(
@@ -85,10 +87,12 @@ def _loader(
         shuffle=shuffle,
         num_workers=workers,
         pin_memory=pin_memory,
+        drop_last=drop_last,
         generator=generator,
         collate_fn=partial(
             collate_token_chunks,
             pad_token_id=default_pad_token_id(dataset.tokenizer),
+            padded_length=padded_length,
         ),
     )
 
@@ -173,6 +177,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         workers=training_config.data_loader_workers,
         seed=training_config.seed,
         pin_memory=pin_memory,
+        padded_length=context_length,
+        drop_last=True,
     )
     validation_loader = _loader(
         validation_dataset,
@@ -181,6 +187,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         workers=training_config.data_loader_workers,
         seed=training_config.seed,
         pin_memory=pin_memory,
+        padded_length=context_length,
+        drop_last=False,
     )
     model = PianoTransformer(model_config).to(device)
     initial_loss = (

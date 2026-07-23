@@ -217,11 +217,15 @@ performance-oriented baseline configuration. Set `training.compile_model` to
 `true` to compile the model in place with `dynamic=False`; `training.compile_mode`
 accepts `default`, `reduce-overhead`, `max-autotune`, or
 `max-autotune-no-cudagraphs`. Compilation is opt-in because distinct padded
-sequence lengths can trigger recompilation. The baseline leaves it disabled so
-training also works without a supported Triton installation. Training reports
-record the resolved model/training configuration, dependency versions, and a
-SHA-256 digest of the dataset manifest. A resumed report leaves fresh-model
-loss reduction unset because it would not be a meaningful comparison.
+sequence lengths can trigger recompilation. Training and validation sequences
+are therefore padded to the configured context length; the training loader also
+drops its incomplete final batch so compiled training steps retain one input
+shape. Validation keeps its incomplete final batch so every validation chunk is
+measured. The baseline leaves compilation disabled so training also works
+without a supported Triton installation. Training reports record the resolved
+model/training configuration, dependency versions, and a SHA-256 digest of the
+dataset manifest. A resumed report leaves fresh-model loss reduction unset
+because it would not be a meaningful comparison.
 The explicit equivalents are:
 
 ```powershell
