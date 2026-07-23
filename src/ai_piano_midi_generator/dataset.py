@@ -10,9 +10,13 @@ from typing import Literal
 
 import numpy as np
 import torch
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, WeightedRandomSampler
 
-from ai_piano_midi_generator.data.preparation import ChunkPlan, plan_state_safe_chunks
+from ai_piano_midi_generator.data.preparation import (
+    ChunkPlan,
+    plan_state_safe_chunks,
+    plan_tail_excerpts,
+)
 from ai_piano_midi_generator.tokenizer import BOS_TOKEN, ExpressiveMidiTokenizer
 
 Split = Literal["train", "validation", "test"]
@@ -26,6 +30,7 @@ class ChunkReference:
     split: Split
     plan: ChunkPlan
     reconstruction_ids: tuple[int, ...]
+    is_tail_excerpt: bool = False
 
 
 def _read_manifest(path: Path) -> list[dict[str, object]]:
@@ -63,11 +68,14 @@ class TokenChunkDataset(Dataset[tuple[torch.Tensor, torch.Tensor]]):
         context_length: int = 2048,
         maximum_performances: int | None = None,
         maximum_chunks: int | None = None,
+        tail_excerpt_lengths: Sequence[int] = (),
     ) -> None:
         if split not in ("train", "validation", "test"):
             raise ValueError(f"Unknown dataset split: {split}")
         if context_length < 8:
             raise ValueError("context_length must be at least 8")
+        if tail_excerpt_lengths and split != "train":
+            raise ValueError("Tail excerpts are only permitted for the training split")
         self.split = split
         self.context_length = context_length
         self.tokenizer = tokenizer
@@ -81,7 +89,8 @@ class TokenChunkDataset(Dataset[tuple[torch.Tensor, torch.Tensor]]):
         if not rows:
             raise ValueError(f"No performances found for split {split}")
 
-        chunks: list[ChunkReference] = []
+        standard_chunks: list[ChunkReference] = []
+        tail_chunks: list[ChunkReference] = []
         token_arrays: dict[Path, np.ndarray] = {}
         for row in rows:
             token_path_value = _string_field(row, "token_array_path")
@@ -103,7 +112,7 @@ class TokenChunkDataset(Dataset[tuple[torch.Tensor, torch.Tensor]]):
                 reconstruction_ids = tuple(
                     tokenizer.token_to_id[token] for token in plan.reconstruction_tokens
                 )
-                chunks.append(
+                standard_chunks.append(
                     ChunkReference(
                         token_array_path=token_path,
                         source_file=_string_field(row, "source_file"),
@@ -113,13 +122,38 @@ class TokenChunkDataset(Dataset[tuple[torch.Tensor, torch.Tensor]]):
                         reconstruction_ids=reconstruction_ids,
                     )
                 )
-                if maximum_chunks is not None and len(chunks) >= maximum_chunks:
+                if (
+                    maximum_chunks is not None
+                    and len(standard_chunks) >= maximum_chunks
+                ):
                     break
-            if maximum_chunks is not None and len(chunks) >= maximum_chunks:
+            if tail_excerpt_lengths:
+                for plan in plan_tail_excerpts(
+                    tokens,
+                    tail_excerpt_lengths,
+                    maximum_length=context_length + 1,
+                ):
+                    tail_chunks.append(
+                        ChunkReference(
+                            token_array_path=token_path,
+                            source_file=_string_field(row, "source_file"),
+                            tune_group=_string_field(row, "tune_group"),
+                            split=split,
+                            plan=plan,
+                            reconstruction_ids=tuple(
+                                tokenizer.token_to_id[token]
+                                for token in plan.reconstruction_tokens
+                            ),
+                            is_tail_excerpt=True,
+                        )
+                    )
+            if maximum_chunks is not None and len(standard_chunks) >= maximum_chunks:
                 break
-        if not chunks:
+        if not standard_chunks:
             raise ValueError(f"No trainable chunks found for split {split}")
-        self.chunks = tuple(chunks)
+        self.standard_chunk_count = len(standard_chunks)
+        self.tail_excerpt_count = len(tail_chunks)
+        self.chunks = tuple([*standard_chunks, *tail_chunks])
         self._token_arrays = token_arrays
 
     def __len__(self) -> int:
@@ -152,6 +186,26 @@ class TokenChunkDataset(Dataset[tuple[torch.Tensor, torch.Tensor]]):
     def cached_token_bytes(self) -> int:
         """Return the in-memory size of the split's unique token arrays."""
         return sum(array.nbytes for array in self._token_arrays.values())
+
+    def mixed_sampler(self, *, tail_ratio: float, seed: int) -> WeightedRandomSampler:
+        """Sample a fixed-size epoch with the requested standard/tail mass."""
+        if not 0.0 < tail_ratio < 1.0:
+            raise ValueError("tail_ratio must be between zero and one")
+        if self.tail_excerpt_count == 0:
+            raise ValueError("Cannot mix tails because the dataset has none")
+        standard_weight = (1.0 - tail_ratio) / self.standard_chunk_count
+        tail_weight = tail_ratio / self.tail_excerpt_count
+        weights = [
+            *([standard_weight] * self.standard_chunk_count),
+            *([tail_weight] * self.tail_excerpt_count),
+        ]
+        generator = torch.Generator().manual_seed(seed)
+        return WeightedRandomSampler(
+            weights,
+            num_samples=self.standard_chunk_count,
+            replacement=True,
+            generator=generator,
+        )
 
 
 def collate_token_chunks(

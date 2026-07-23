@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from collections import Counter, defaultdict
-from dataclasses import dataclass
+from collections import Counter, defaultdict, deque
+from dataclasses import dataclass, field
 from math import floor
 from typing import Literal
 
@@ -25,11 +25,16 @@ class SamplingResult:
     invalid_events_blocked: dict[str, int]
     final_state_repairs: dict[str, int]
     safeguard_interventions: tuple[dict[str, int | float | str], ...] = ()
+    model_generated_token_count: int = 0
+    model_eos_token_position: int | None = None
 
 
 @dataclass(slots=True)
 class _GenerationState:
     active_notes: dict[int, int]
+    note_start_steps: dict[int, deque[int]] = field(
+        default_factory=lambda: defaultdict(deque)
+    )
     pedal_down: bool = False
     velocity_selected: bool = False
     ended: bool = False
@@ -92,6 +97,7 @@ def _advance_state(state: _GenerationState, token: str, invalid: Counter[str]) -
         if not state.velocity_selected:
             invalid["note_on_without_velocity"] += 1
         state.active_notes[pitch] = state.active_notes.get(pitch, 0) + 1
+        state.note_start_steps[pitch].append(state.elapsed_steps)
         state.last_note_on_step = state.elapsed_steps
     elif token.startswith("NOTE_OFF_"):
         pitch = int(token.removeprefix("NOTE_OFF_"))
@@ -99,6 +105,7 @@ def _advance_state(state: _GenerationState, token: str, invalid: Counter[str]) -
             invalid["orphan_note_off"] += 1
         else:
             state.active_notes[pitch] -= 1
+            state.note_start_steps[pitch].popleft()
     elif token == PEDAL_DOWN_TOKEN:
         if state.pedal_down:
             invalid["duplicate_pedal_down"] += 1
@@ -132,8 +139,6 @@ def _constraint_mask(
         allowed[tokenizer.token_to_id[PEDAL_DOWN_TOKEN]] = False
     else:
         allowed[tokenizer.token_to_id[PEDAL_UP_TOKEN]] = False
-    if any(state.active_notes.values()) or state.pedal_down:
-        allowed[tokenizer.token_to_id[EOS_TOKEN]] = False
     if not allow_eos:
         allowed[tokenizer.token_to_id[EOS_TOKEN]] = False
     return allowed
@@ -155,12 +160,43 @@ def _blocked_reasons(
         reasons.append("duplicate_pedal_down")
     elif token == PEDAL_UP_TOKEN and not state.pedal_down:
         reasons.append("pedal_up_while_up")
-    elif token == EOS_TOKEN:
-        if any(state.active_notes.values()) or state.pedal_down:
-            reasons.append("unsafe_eos")
-        if not allow_eos:
-            reasons.append("minimum_length_eos")
+    elif token == EOS_TOKEN and not allow_eos:
+        reasons.append("minimum_length_eos")
     return tuple(reasons)
+
+
+def _append_state_cleanup(
+    generated: list[str],
+    state: _GenerationState,
+    repairs: Counter[str],
+) -> None:
+    if any(
+        start_step >= state.elapsed_steps
+        for starts in state.note_start_steps.values()
+        for start_step in starts
+    ):
+        generated.append("TIME_SHIFT_1")
+        invalid: Counter[str] = Counter()
+        _advance_state(state, "TIME_SHIFT_1", invalid)
+        if invalid:  # pragma: no cover - internal invariant
+            raise RuntimeError(f"State cleanup produced invalid token: {invalid}")
+        repairs["advanced_zero_duration_notes"] += 1
+    for pitch in sorted(state.active_notes):
+        for _ in range(state.active_notes[pitch]):
+            token = f"NOTE_OFF_{pitch}"
+            generated.append(token)
+            invalid: Counter[str] = Counter()
+            _advance_state(state, token, invalid)
+            if invalid:  # pragma: no cover - internal invariant
+                raise RuntimeError(f"State cleanup produced invalid token: {invalid}")
+            repairs["closed_active_notes"] += 1
+    if state.pedal_down:
+        generated.append(PEDAL_UP_TOKEN)
+        invalid = Counter()
+        _advance_state(state, PEDAL_UP_TOKEN, invalid)
+        if invalid:  # pragma: no cover - internal invariant
+            raise RuntimeError(f"State cleanup produced invalid token: {invalid}")
+        repairs["released_pedal"] += 1
 
 
 def _sample_index(
@@ -301,7 +337,10 @@ def sample_tokens(
         )
     generated = list(prompt_tokens)
     blocked: Counter[str] = Counter()
+    repairs: Counter[str] = Counter()
     interventions: list[dict[str, int | float | str]] = []
+    model_generated_token_count = 0
+    model_eos_token_position: int | None = None
     generator = torch.Generator(device=device)
     generator.manual_seed(seed)
     model.eval()
@@ -398,21 +437,18 @@ def sample_tokens(
                 )
             )
             break
+        model_generated_token_count += 1
+        if token == EOS_TOKEN:
+            model_eos_token_position = model_generated_token_count
+            _append_state_cleanup(generated, state, repairs)
         generated.append(token)
         invalid: Counter[str] = Counter()
         _advance_state(state, token, invalid)
         if invalid and constrain_states:
             raise RuntimeError(f"Constrained sampler produced invalid token: {invalid}")
 
-    repairs: Counter[str] = Counter()
     if not state.ended:
-        for pitch in sorted(state.active_notes):
-            for _ in range(state.active_notes[pitch]):
-                generated.append(f"NOTE_OFF_{pitch}")
-                repairs["closed_active_notes"] += 1
-        if state.pedal_down:
-            generated.append(PEDAL_UP_TOKEN)
-            repairs["released_pedal"] += 1
+        _append_state_cleanup(generated, state, repairs)
         generated.append(EOS_TOKEN)
         repairs["appended_eos"] += 1
     return SamplingResult(
@@ -420,4 +456,6 @@ def sample_tokens(
         invalid_events_blocked=dict(sorted(blocked.items())),
         final_state_repairs=dict(sorted(repairs.items())),
         safeguard_interventions=tuple(interventions),
+        model_generated_token_count=model_generated_token_count,
+        model_eos_token_position=model_eos_token_position,
     )

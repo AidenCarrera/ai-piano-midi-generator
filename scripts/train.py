@@ -60,6 +60,14 @@ def _mapping(value: object, name: str) -> dict[str, Any]:
     return value
 
 
+def _integer_sequence(value: object, name: str) -> tuple[int, ...]:
+    if not isinstance(value, list) or not value:
+        raise ValueError(f"{name} must be a non-empty integer array")
+    if any(not isinstance(item, int) or isinstance(item, bool) for item in value):
+        raise ValueError(f"{name} must contain only integers")
+    return tuple(value)
+
+
 def _write_report(path: Path, report: dict[str, object]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(f".{path.name}.tmp")
@@ -79,12 +87,19 @@ def _loader(
     pin_memory: bool,
     padded_length: int,
     drop_last: bool,
+    tail_mix_ratio: float | None = None,
 ) -> DataLoader[tuple[torch.Tensor, torch.Tensor]]:
     generator = torch.Generator().manual_seed(seed)
+    sampler = (
+        dataset.mixed_sampler(tail_ratio=tail_mix_ratio, seed=seed)
+        if tail_mix_ratio is not None
+        else None
+    )
     return DataLoader(
         dataset,
         batch_size=batch_size,
-        shuffle=shuffle,
+        shuffle=shuffle if sampler is None else False,
+        sampler=sampler,
         num_workers=workers,
         pin_memory=pin_memory,
         drop_last=drop_last,
@@ -113,6 +128,23 @@ def main(argv: Sequence[str] | None = None) -> int:
     output_config = _mapping(raw.get("output"), "output")
     manifest = Path(str(data_config["manifest"]))
     context_length = int(data_config["context_length"])
+    raw_tail_lengths = data_config.get("tail_excerpt_lengths")
+    tail_excerpt_lengths = (
+        _integer_sequence(raw_tail_lengths, "data.tail_excerpt_lengths")
+        if raw_tail_lengths is not None
+        else ()
+    )
+    raw_tail_mix_ratio = data_config.get("tail_mix_ratio")
+    tail_mix_ratio = (
+        float(raw_tail_mix_ratio) if raw_tail_mix_ratio is not None else None
+    )
+    if bool(tail_excerpt_lengths) != (tail_mix_ratio is not None):
+        raise ValueError(
+            "data.tail_excerpt_lengths and data.tail_mix_ratio must be configured "
+            "together"
+        )
+    if tail_mix_ratio is not None and not 0.0 < tail_mix_ratio < 1.0:
+        raise ValueError("data.tail_mix_ratio must be between zero and one")
     if context_length != model_config.context_length:
         raise ValueError("data.context_length and model.context_length must match")
     device = select_device(args.device)
@@ -161,6 +193,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         tokenizer,
         context_length=context_length,
         maximum_chunks=maximum_train_chunks,
+        tail_excerpt_lengths=tail_excerpt_lengths,
     )
     validation_dataset = TokenChunkDataset(
         manifest,
@@ -179,6 +212,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         pin_memory=pin_memory,
         padded_length=context_length,
         drop_last=True,
+        tail_mix_ratio=tail_mix_ratio,
     )
     validation_loader = _loader(
         validation_dataset,
@@ -253,11 +287,17 @@ def main(argv: Sequence[str] | None = None) -> int:
         },
         "context_length": context_length,
         "train_chunk_count": len(train_dataset),
+        "standard_train_chunk_count": train_dataset.standard_chunk_count,
+        "tail_excerpt_count": train_dataset.tail_excerpt_count,
+        "tail_excerpt_lengths": list(tail_excerpt_lengths),
+        "tail_mix_ratio": tail_mix_ratio,
         "validation_chunk_count": len(validation_dataset),
         "mode": "smoke"
         if args.smoke_test
         else "tiny_overfit"
         if args.tiny_overfit
+        else "eos"
+        if tail_excerpt_lengths
         else "full",
     }
     final_loss = float(summary["final_validation_loss"])

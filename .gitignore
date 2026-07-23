@@ -36,7 +36,8 @@ data/manifests/tokenized_dataset.jsonl
 reports/dataset/
 reports/tokenization/
 reports/baseline_2048/
-reports/archive/
+reports/eos_2048/
+reports/comparisons/
 reports/figures/
 
 # Model and training artifacts

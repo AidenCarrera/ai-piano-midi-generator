@@ -280,10 +280,10 @@ def split_balance_figure(project_root: Path) -> Figure:
 
 def training_loss_figure(project_root: Path) -> Figure:
     """Visualize available training endpoints and held-out loss measurements."""
-    training_paths = sorted(project_root.glob("reports/baseline_*/training.json"))
-    evaluation_paths = sorted(project_root.glob("reports/baseline_*/evaluation.json"))
+    training_paths = sorted(project_root.glob("reports/*/training.json"))
+    evaluation_paths = sorted(project_root.glob("reports/*/evaluation.json"))
     if not training_paths and not evaluation_paths:
-        raise FileNotFoundError(project_root / "reports/baseline_*/training.json")
+        raise FileNotFoundError(project_root / "reports/*/training.json")
 
     training_reports = {
         path.parent.name: read_json_object(path) for path in training_paths
@@ -299,27 +299,36 @@ def training_loss_figure(project_root: Path) -> Figure:
 
     for index, (name, report) in enumerate(training_reports.items()):
         steps = _number(report, "steps")
-        initial = _number(report, "initial_loss")
         final = _number(report, "final_training_loss")
+        initial_value = report.get("initial_loss")
+        initial = (
+            float(initial_value)
+            if isinstance(initial_value, (int, float))
+            and not isinstance(initial_value, bool)
+            else None
+        )
+        x_values = [steps] if initial is None else [0.0, steps]
+        y_values = [final] if initial is None else [initial, final]
         axes[0].plot(
-            [0.0, steps],
-            [initial, final],
+            x_values,
+            y_values,
             marker="o",
             linewidth=2,
             color=colors[index % len(colors)],
             label=name,
         )
-        axes[0].annotate(
-            f"{initial:.2f}",
-            (0.0, initial),
-            xytext=(4, 5),
-            textcoords="offset points",
-            fontsize=8,
-        )
+        if initial is not None:
+            axes[0].annotate(
+                f"{initial:.2f}",
+                (0.0, initial),
+                xytext=(4, 5 + index * 12),
+                textcoords="offset points",
+                fontsize=8,
+            )
         axes[0].annotate(
             f"{final:.2f}",
             (steps, final),
-            xytext=(4, 5),
+            xytext=(4, 5 + index * 12),
             textcoords="offset points",
             fontsize=8,
         )

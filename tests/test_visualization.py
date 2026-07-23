@@ -9,7 +9,10 @@ import matplotlib
 
 matplotlib.use("Agg")
 
-from ai_piano_midi_generator.visualization import generate_project_figures
+from ai_piano_midi_generator.visualization import (
+    generate_project_figures,
+    training_loss_figure,
+)
 
 
 def _write_json(path: Path, value: object) -> None:
@@ -148,3 +151,35 @@ def test_generate_project_figures_from_existing_report_shapes(tmp_path: Path) ->
     manifest = json.loads((output_directory / "manifest.json").read_text())
     assert manifest["skipped_plots"] == []
     assert len(manifest["generated_files"]) == 5
+
+
+def test_training_loss_figure_includes_nonbaseline_training_runs(
+    tmp_path: Path,
+) -> None:
+    report = {
+        "steps": 6_000,
+        "initial_loss": 6.0,
+        "final_training_loss": 2.2,
+        "best_validation_loss": 2.5,
+        "final_validation_loss": 2.6,
+    }
+    _write_json(tmp_path / "reports/baseline_2048/training.json", report)
+    _write_json(
+        tmp_path / "reports/eos_2048/training.json",
+        {
+            **report,
+            "initial_loss": None,
+            "final_training_loss": 2.1,
+            "best_validation_loss": 2.4,
+            "final_validation_loss": 2.5,
+        },
+    )
+
+    figure = training_loss_figure(tmp_path)
+
+    endpoint_labels = {
+        text.get_text() for text in figure.axes[0].get_legend().get_texts()
+    }
+    validation_labels = {tick.get_text() for tick in figure.axes[1].get_xticklabels()}
+    assert endpoint_labels == {"baseline_2048", "eos_2048"}
+    assert validation_labels == {"baseline_2048", "eos_2048"}

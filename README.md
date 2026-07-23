@@ -15,22 +15,18 @@ scripts/                    Stable dataset, training, generation, and evaluation
 scripts/experiments/        Reproducible model-analysis experiments
 src/ai_piano_midi_generator/ Reusable library code
 tests/                      Automated tests
-checkpoints/                Local model checkpoints, organized by baseline
-outputs/                    Local generated MIDI files, organized by baseline
+checkpoints/                Local model checkpoints, organized by model
+outputs/                    Local generated MIDI files, organized by model
 artifacts/token-arrays/     Generated token arrays, mirroring outputs/ runs
-reports/                    Generated reports by pipeline phase and baseline
+reports/                    Generated reports by pipeline phase and model
 reports/figures/            Generated dataset and experiment figures
 ```
 
-Historical experiment reports and MIDI outputs live under `reports/archive/`
-and the corresponding model's `outputs/.../archive/` directory. Generated token
-arrays live under `artifacts/token-arrays/` with the same baseline and experiment
-subdirectories as their MIDI files. Checkpoints, outputs, artifacts, generated
-reports, raw data, and processed data are intentionally ignored by Git.
-
-The retired 1,024-context run is preserved under the archive directories in
-`reports/archive/`, `checkpoints/archive/`, and `outputs/archive/`. Active
-commands and defaults target the 2,048-context baseline.
+Generated token arrays live under `artifacts/token-arrays/` with the same model
+and experiment subdirectories as their MIDI files. Checkpoints, outputs,
+artifacts, generated reports, raw data, and processed data are intentionally
+ignored by Git. The active model directories are `baseline_2048` and
+`eos_2048`.
 
 ## Setup
 
@@ -262,6 +258,23 @@ the same software/hardware stack, while a mid-run resume is trajectory-close
 rather than bitwise identical. PyTorch does not promise identical results
 across releases, devices, or platforms.
 
+Train the same architecture and 6,000-step schedule from scratch with
+EOS-ending excerpts mixed into 20% of training draws:
+
+```powershell
+uv run python scripts/train_eos.py --smoke-test
+uv run python scripts/train_eos.py
+```
+
+This run does not load baseline weights or alter the tokenizer, vocabulary,
+token IDs, validation split, or checkpoint format. Its outputs are isolated
+under `checkpoints/eos_2048/` and `reports/eos_2048/`.
+
+Tail construction never inserts synthetic note-off or pedal-up events before
+the training EOS. If the model emits EOS with notes or sustain still active,
+the inference exporter deterministically closes that state before decoding and
+records the cleanup in the generation report.
+
 Generate a constrained MIDI sample from a checkpoint:
 
 ```powershell
@@ -269,11 +282,13 @@ uv run python scripts/generate.py --checkpoint checkpoints/baseline_2048/best.pt
 ```
 
 Sampling supports temperature, top-k, and top-p controls and blocks invalid
-note-off, pedal, and end-of-sequence states before decoding through the existing
-tokenizer.
+note-off and pedal transitions. EOS remains eligible after the configured
+minimum; any active note or sustain state is closed by the exporter before
+decoding through the existing tokenizer.
 
 Diagnose long-context time-shift behavior against length-matched train,
-validation, and test windows without regenerating the preserved sweep:
+validation, and test windows using the capped samples in the baseline natural-
+termination report:
 
 ```powershell
 uv run python scripts/experiments/diagnose_time_shift_collapse.py
@@ -287,7 +302,7 @@ intervention is recorded. To opt into the train-derived musical limits for one
 sample:
 
 ```powershell
-uv run python scripts/generate.py --checkpoint checkpoints/baseline_2048/best.pt --config configs/generation_baseline_2048_musical.toml
+uv run python scripts/generate.py --checkpoint checkpoints/baseline_2048/best.pt --config configs/generation_musical_2048.toml
 ```
 
 Use `--mode endurance --max-new-tokens 2048` for an unconstrained stress test,

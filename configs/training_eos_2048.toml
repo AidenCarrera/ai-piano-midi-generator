@@ -1,0 +1,39 @@
+[data]
+manifest = "data/manifests/tokenized_dataset.jsonl"
+context_length = 2048
+tail_excerpt_lengths = [256, 512, 1024, 1536, 2048]
+tail_mix_ratio = 0.20
+
+[model]
+vocabulary_size = 392
+context_length = 2048
+embedding_size = 384
+layer_count = 6
+head_count = 6
+feed_forward_size = 1536
+dropout = 0.10
+
+[training]
+batch_size = 8
+gradient_accumulation_steps = 1
+maximum_steps = 6000
+learning_rate = 0.0003
+minimum_learning_rate = 0.00003
+warmup_steps = 250
+weight_decay = 0.10
+gradient_clip_norm = 1.0
+evaluation_interval = 125
+evaluation_batches = 40
+checkpoint_interval = 250
+log_interval = 10
+seed = 2026
+data_loader_workers = 0
+amp = true
+deterministic = false
+fused_adamw = true
+compile_model = false
+compile_mode = "default"
+
+[output]
+checkpoint_directory = "checkpoints/eos_2048"
+training_report = "reports/eos_2048/training.json"

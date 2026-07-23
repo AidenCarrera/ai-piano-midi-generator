@@ -177,6 +177,42 @@ def test_eos_is_allowed_from_the_first_prediction_without_a_minimum() -> None:
     assert result.safeguard_interventions == ()
 
 
+def test_model_eos_closes_active_state_only_in_exported_tokens() -> None:
+    tokenizer = ExpressiveMidiTokenizer()
+    model = cast(PianoTransformer, _AlwaysEosModel(tokenizer))
+    prompt = (
+        BOS_TOKEN,
+        PEDAL_DOWN_TOKEN,
+        "VELOCITY_8",
+        "NOTE_ON_60",
+    )
+
+    result = sample_tokens(
+        model,
+        tokenizer,
+        prompt_tokens=prompt,
+        maximum_new_tokens=10,
+        top_k=1,
+        top_p=1.0,
+    )
+
+    assert result.tokens == (
+        *prompt,
+        "TIME_SHIFT_1",
+        "NOTE_OFF_60",
+        "PEDAL_UP",
+        EOS_TOKEN,
+    )
+    assert result.model_generated_token_count == 1
+    assert result.model_eos_token_position == 1
+    assert result.final_state_repairs == {
+        "advanced_zero_duration_notes": 1,
+        "closed_active_notes": 1,
+        "released_pedal": 1,
+    }
+    assert tokenizer.decode(result.tokens).repairs.total == 0
+
+
 def test_prompt_sanitizer_removes_redundant_pedal_state_events() -> None:
     tokenizer = ExpressiveMidiTokenizer()
     prompt = (

@@ -18,6 +18,7 @@ import numpy as np
 
 from ai_piano_midi_generator.tokenizer import (
     BOS_TOKEN,
+    EOS_TOKEN,
     PEDAL_DOWN_TOKEN,
     PEDAL_UP_TOKEN,
     ExpressiveMidiTokenizer,
@@ -419,6 +420,65 @@ def plan_state_safe_chunks(
         _token_states(tokens),
         _event_boundaries(tokens),
     )
+
+
+def plan_tail_excerpts(
+    tokens: Sequence[str],
+    excerpt_lengths: Sequence[int],
+    *,
+    maximum_length: int,
+) -> list[ChunkPlan]:
+    """Plan deduplicated state-reconstructed tails ending at the true EOS."""
+    if maximum_length < 2:
+        raise ValueError("maximum_length must be at least 2 tokens")
+    if not tokens or tokens[-1] != EOS_TOKEN:
+        raise ValueError("Tail excerpts require a sequence ending with EOS")
+    requested_lengths = tuple(dict.fromkeys(excerpt_lengths))
+    if not requested_lengths:
+        raise ValueError("At least one tail excerpt length is required")
+    if any(length < 2 or length > maximum_length for length in requested_lengths):
+        raise ValueError(f"Tail excerpt lengths must be between 2 and {maximum_length}")
+
+    states = _token_states(tokens)
+    event_boundaries = _event_boundaries(tokens)
+    plans: list[ChunkPlan] = []
+    seen: set[tuple[int, tuple[str, ...]]] = set()
+    for requested_length in requested_lengths:
+        lower_bound = max(0, len(tokens) - requested_length)
+        for start in range(lower_bound, len(tokens)):
+            state = states[start]
+            at_event_boundary = start == 0 or start in event_boundaries
+            reconstruction = (
+                ()
+                if start == 0
+                else _state_reconstruction_tokens(
+                    state, include_velocity_state=not at_event_boundary
+                )
+            )
+            if len(reconstruction) + len(tokens) - start > requested_length:
+                continue
+            identity = (start, reconstruction)
+            if identity in seen:
+                break
+            seen.add(identity)
+            safe_start = start == 0 or (at_event_boundary and state.safe)
+            plans.append(
+                ChunkPlan(
+                    start=start,
+                    end=len(tokens),
+                    context_length=requested_length,
+                    safe_start=safe_start,
+                    state_reconstruction_required=(
+                        start != 0 and (not safe_start or not at_event_boundary)
+                    ),
+                    active_notes_at_start=len(state.active_notes),
+                    pedal_down_at_start=state.pedal_down,
+                    reconstruction_tokens=reconstruction,
+                    forced_inside_event_group=not at_event_boundary,
+                )
+            )
+            break
+    return plans
 
 
 def _display_path(path: Path) -> str:

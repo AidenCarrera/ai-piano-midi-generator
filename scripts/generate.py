@@ -186,6 +186,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         ),
         "prompt_token_count": len(prompt_tokens),
         "generated_total_token_count": len(sampled.tokens),
+        "model_generated_token_count": sampled.model_generated_token_count,
+        "model_eos_token_position": sampled.model_eos_token_position,
         "generation_settings": settings,
         "note_count": sum(len(track.notes) for track in reparsed.tracks),
         "cc64_event_count": sum(

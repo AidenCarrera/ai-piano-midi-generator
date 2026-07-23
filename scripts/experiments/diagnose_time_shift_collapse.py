@@ -40,9 +40,9 @@ def build_parser() -> argparse.ArgumentParser:
         default=Path("data/manifests/tokenized_dataset.jsonl"),
     )
     parser.add_argument(
-        "--sweep-report",
+        "--generation-report",
         type=Path,
-        default=Path("reports/archive/baseline_2048_forced_sweep.json"),
+        default=Path("reports/baseline_2048/natural_termination.json"),
     )
     parser.add_argument(
         "--checkpoint",
@@ -296,23 +296,29 @@ def _snapshot_indices(diagnostics: dict[str, object], token_count: int) -> set[i
 
 
 def _generated_statistics(
-    sweep: dict[str, object],
+    generation_report: dict[str, object],
     tokenizer: ExpressiveMidiTokenizer,
     thresholds: dict[str, object],
     rolling_window: int,
     model: PianoTransformer,
 ) -> list[dict[str, object]]:
-    samples = sweep.get("samples")
+    samples = generation_report.get("samples")
     if not isinstance(samples, list):
-        raise ValueError("Sweep report has no samples list")
+        raise ValueError("Generation report has no samples list")
+    length_matched_samples = [
+        sample
+        for sample in samples
+        if isinstance(sample, dict)
+        and sample.get("model_generated_token_count") == COMPARISON_TOKEN_COUNT
+    ]
+    if not length_matched_samples:
+        raise ValueError("Generation report has no full 2,048-token samples")
     records: list[dict[str, object]] = []
     collapse_value = thresholds["rolling_time_shift_ratio"]
     if not isinstance(collapse_value, (int, float)):
         raise ValueError("rolling_time_shift_ratio threshold must be numeric")
     collapse_ratio = float(collapse_value)
-    for number, sample in enumerate(samples, start=1):
-        if not isinstance(sample, dict):
-            raise ValueError("Sweep sample must be an object")
+    for number, sample in enumerate(length_matched_samples, start=1):
         token_path = sample.get("token_array_path")
         generated_count = sample.get("model_generated_token_count")
         prompt_count = sample.get("prompt_token_count")
@@ -356,7 +362,11 @@ def _generated_statistics(
                 "probability_snapshots": snapshots,
             }
         )
-        print(f"[{number}/{len(samples)}] diagnosed seed {sample['seed']}", flush=True)
+        print(
+            f"[{number}/{len(length_matched_samples)}] diagnosed seed "
+            f"{sample['seed']}",
+            flush=True,
+        )
     return records
 
 
@@ -371,7 +381,7 @@ def _write_markdown(path: Path, report: dict[str, object]) -> None:
     lines = [
         "# 2,048-context generation degeneracy diagnostics",
         "",
-        "The original sweep files and reports were read without modification.",
+        "The source generation files and report were read without modification.",
         "Thresholds use non-overlapping, full 2,048-token windows from the train "
         "split so generated and real sequences have equivalent lengths.",
         "",
@@ -412,7 +422,7 @@ def _write_markdown(path: Path, report: dict[str, object]) -> None:
     lines.extend(
         [
             "",
-            "## Preserved unconstrained sweep",
+            "## Length-matched generated samples",
             "",
             "| Temp | Seed | MIDI valid | Notes | Duration (s) | Notes/s | TS % | "
             "Longest run | Max silence (s) | Collapse token | Classification |",
@@ -465,16 +475,16 @@ def main(argv: Sequence[str] | None = None) -> int:
     device = select_device(args.device)
     model, _ = load_model_checkpoint(args.checkpoint, device=device)
     model.eval()
-    sweep = json.loads(args.sweep_report.read_text(encoding="utf-8"))
-    if not isinstance(sweep, dict):
-        raise ValueError("Sweep report must be an object")
+    generation_report = json.loads(args.generation_report.read_text(encoding="utf-8"))
+    if not isinstance(generation_report, dict):
+        raise ValueError("Generation report must be an object")
     generated = _generated_statistics(
-        sweep, tokenizer, thresholds, args.rolling_window, model
+        generation_report, tokenizer, thresholds, args.rolling_window, model
     )
     report: dict[str, object] = {
         "status": "complete",
         "checkpoint": args.checkpoint.as_posix(),
-        "source_sweep_report": args.sweep_report.as_posix(),
+        "source_generation_report": args.generation_report.as_posix(),
         "comparison_token_count": COMPARISON_TOKEN_COUNT,
         "rolling_window_tokens": args.rolling_window,
         "thresholds": thresholds,

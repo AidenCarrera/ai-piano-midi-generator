@@ -105,6 +105,60 @@ def test_dataset_loads_only_requested_split_and_reconstructs_state(
     assert targets.shape == inputs.shape
 
 
+def test_dataset_mixes_deduplicated_true_eos_tails_at_requested_weight(
+    tmp_path: Path,
+) -> None:
+    tokenizer = ExpressiveMidiTokenizer()
+    tokens = (
+        BOS_TOKEN,
+        PEDAL_DOWN_TOKEN,
+        "VELOCITY_8",
+        "NOTE_ON_60",
+        "TIME_SHIFT_10",
+        "TIME_SHIFT_10",
+        "TIME_SHIFT_10",
+        "NOTE_OFF_60",
+        EOS_TOKEN,
+    )
+    token_path = tmp_path / "train.npy"
+    write_array(token_path, tokenizer, tokens)
+    manifest = tmp_path / "manifest.jsonl"
+    manifest.write_text(
+        json.dumps(
+            {
+                "source_file": "train.mid",
+                "tune_group": "train-tune",
+                "split": "train",
+                "token_array_path": str(token_path),
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    dataset = TokenChunkDataset(
+        manifest,
+        "train",
+        tokenizer,
+        context_length=8,
+        tail_excerpt_lengths=(6, 8, 8),
+    )
+    sampler = dataset.mixed_sampler(tail_ratio=0.2, seed=2026)
+
+    assert dataset.standard_chunk_count == 1
+    assert dataset.tail_excerpt_count == 2
+    assert len(dataset) == 3
+    assert sum(sampler.weights[: dataset.standard_chunk_count]).item() == pytest.approx(
+        0.8
+    )
+    assert sum(sampler.weights[dataset.standard_chunk_count :]).item() == pytest.approx(
+        0.2
+    )
+    for index in range(dataset.standard_chunk_count, len(dataset)):
+        _, targets = dataset[index]
+        assert targets[-1].item() == tokenizer.token_to_id[EOS_TOKEN]
+
+
 def test_chunk_collation_masks_right_padding() -> None:
     first = (np.array([1, 2, 3]), np.array([2, 3, 4]))
     second = (np.array([1, 2]), np.array([2, 3]))

@@ -13,6 +13,7 @@ from ai_piano_midi_generator.data.preparation import (
     automatic_tune_group,
     deterministic_group_splits,
     plan_state_safe_chunks,
+    plan_tail_excerpts,
     prepare_tokenized_dataset,
 )
 from ai_piano_midi_generator.tokenizer import (
@@ -126,6 +127,38 @@ def test_chunk_planning_prefers_safe_boundary_when_available() -> None:
     assert plans[1].safe_start is True
     assert plans[1].state_reconstruction_required is False
     assert plans[1].reconstruction_tokens == (BOS_TOKEN,)
+
+
+def test_tail_excerpt_planning_preserves_true_eos_and_boundary_state() -> None:
+    tokens = (
+        BOS_TOKEN,
+        PEDAL_DOWN_TOKEN,
+        "VELOCITY_8",
+        "NOTE_ON_60",
+        "TIME_SHIFT_10",
+        "TIME_SHIFT_10",
+        "TIME_SHIFT_10",
+        "NOTE_OFF_60",
+        EOS_TOKEN,
+    )
+
+    plans = plan_tail_excerpts(tokens, [6, 8, 8], maximum_length=8)
+
+    assert len(plans) == 2
+    assert all(plan.end == len(tokens) for plan in plans)
+    assert all(plan.model_token_count <= plan.context_length for plan in plans)
+    assert all(tokens[plan.end - 1] == EOS_TOKEN for plan in plans)
+    shortest = plans[0]
+    assert shortest.reconstruction_tokens == (
+        BOS_TOKEN,
+        PEDAL_DOWN_TOKEN,
+        "VELOCITY_8",
+        "NOTE_ON_60",
+    )
+    assert PEDAL_UP_TOKEN not in shortest.reconstruction_tokens
+    assert not any(
+        token.startswith("NOTE_OFF_") for token in shortest.reconstruction_tokens
+    )
 
 
 def test_full_preparation_writes_round_trip_arrays_without_group_leakage(

@@ -294,20 +294,8 @@ def analyze_generation(
     except Exception as exc:  # pragma: no cover - defensive report path
         parse_error = f"{type(exc).__name__}: {exc}"
 
-    repair_token_count = sum(sampled.final_state_repairs.values())
-    generated_with_repairs = len(sampled.tokens) - len(prompt_tokens)
-    model_generated_tokens = max(0, generated_with_repairs - repair_token_count)
-    model_sequence = sampled.tokens[
-        len(prompt_tokens) : len(prompt_tokens) + model_generated_tokens
-    ]
-    eos_offset = next(
-        (
-            index
-            for index, token in enumerate(model_sequence, start=1)
-            if token == EOS_TOKEN
-        ),
-        None,
-    )
+    model_generated_tokens = sampled.model_generated_token_count
+    eos_offset = sampled.model_eos_token_position
     safeguard_terminated = any(
         intervention.get("action") == "terminate_with_eos"
         for intervention in sampled.safeguard_interventions
@@ -331,8 +319,8 @@ def analyze_generation(
         "model_eos_token_position": eos_offset,
         "termination_reason": termination_reason,
         "total_output_token_count": len(sampled.tokens),
-        "ended_with_safe_model_eos": not bool(
-            sampled.final_state_repairs.get("appended_eos", 0)
+        "ended_with_safe_model_eos": (
+            eos_offset is not None and not sampled.final_state_repairs
         ),
         "note_count": note_count,
         "cc64_event_count": cc64_count,
