@@ -92,7 +92,9 @@ class TokenChunkDataset(Dataset[tuple[torch.Tensor, torch.Tensor]]):
             if token_ids is None:
                 token_ids = np.load(token_path, allow_pickle=False)
                 if token_ids.ndim != 1:
-                    raise ValueError(f"Token array must be one-dimensional: {token_path}")
+                    raise ValueError(
+                        f"Token array must be one-dimensional: {token_path}"
+                    )
                 token_ids.setflags(write=False)
                 token_arrays[token_path] = token_ids
             tokens = tokenizer.ids_to_tokens(token_ids)

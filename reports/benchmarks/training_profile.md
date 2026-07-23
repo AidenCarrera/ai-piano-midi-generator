@@ -46,7 +46,7 @@ bottleneck relative to the 203.63 ms of device work.
 ## Reproduction
 
 ```powershell
-uv run python scripts/profile_training.py --device cuda --warmup-steps 5 --profile-steps 10
+uv run python scripts/experiments/profile_training.py --device cuda --warmup-steps 5 --profile-steps 10
 ```
 
 The machine-readable results are in `training_profile.json`. The detailed

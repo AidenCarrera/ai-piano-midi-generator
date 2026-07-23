@@ -234,11 +234,11 @@ Token arrays are loaded once into a read-only per-split memory cache instead of
 reopening an `.npy` file for every chunk. On the current Windows/CUDA system,
 the fixed-batch loader benchmark selected zero workers: its cached median epoch
 was 0.0267 seconds, versus 0.0544 with two workers and 0.0553 with four. The
-repeatable benchmark is `scripts/benchmark_data_loader.py`, with results stored
-in `reports/benchmarks/data_loader_cache.json`.
+repeatable benchmark is `scripts/experiments/benchmark_data_loader.py`, with
+results stored in `reports/benchmarks/data_loader_cache.json`.
 
 The representative PyTorch profiler capture is reproducible with
-`scripts/profile_training.py`. Its summary is stored in
+`scripts/experiments/profile_training.py`. Its summary is stored in
 `reports/benchmarks/training_profile.md`: attention and matrix multiplication
 accounted for 76.69% of device time, while GELU, gradient clipping, the fused
 optimizer, cached loading, and host-to-device transfer were each too small to

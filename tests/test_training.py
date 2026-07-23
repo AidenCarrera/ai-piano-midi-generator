@@ -263,9 +263,7 @@ def test_train_model_compiles_in_place_with_configured_mode(
     )
     compile_calls: list[dict[str, object]] = []
 
-    def record_compile(
-        self: PianoTransformer, *args: object, **kwargs: object
-    ) -> None:
+    def record_compile(self: PianoTransformer, *args: object, **kwargs: object) -> None:
         assert self is model
         assert not args
         compile_calls.append(kwargs)
@@ -286,9 +284,7 @@ def test_train_model_compiles_in_place_with_configured_mode(
         maximum_steps=1,
     )
 
-    assert compile_calls == [
-        {"dynamic": False, "mode": "max-autotune-no-cudagraphs"}
-    ]
+    assert compile_calls == [{"dynamic": False, "mode": "max-autotune-no-cudagraphs"}]
 
 
 def test_sampling_is_deterministic_and_decodes_without_repairs() -> None:

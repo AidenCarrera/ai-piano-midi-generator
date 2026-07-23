@@ -60,9 +60,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--token-directory",
         type=Path,
-        default=Path(
-            "artifacts/token-arrays/baseline_2048/natural_termination"
-        ),
+        default=Path("artifacts/token-arrays/baseline_2048/natural_termination"),
     )
     parser.add_argument(
         "--json-report",
@@ -630,7 +628,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                 )
                 midi_path = directory / f"seed_{seed}.mid"
                 token_path = (
-                    args.token_directory / mode / _temperature_name(temperature)
+                    args.token_directory
+                    / mode
+                    / _temperature_name(temperature)
                     / f"seed_{seed}.npy"
                 )
                 if not args.overwrite:

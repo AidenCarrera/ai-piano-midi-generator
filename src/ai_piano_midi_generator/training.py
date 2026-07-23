@@ -133,8 +133,10 @@ def build_optimizer(model: nn.Module, config: TrainingConfig) -> torch.optim.Ada
         else:
             no_decay.append(parameter)
     trainable_parameters = [*decay, *no_decay]
-    use_fused = config.fused_adamw and bool(trainable_parameters) and all(
-        parameter.device.type == "cuda" for parameter in trainable_parameters
+    use_fused = (
+        config.fused_adamw
+        and bool(trainable_parameters)
+        and all(parameter.device.type == "cuda" for parameter in trainable_parameters)
     )
     return torch.optim.AdamW(
         [
@@ -388,9 +390,7 @@ def train_model(
         )
         scaler.step(optimizer)
         scaler.update()
-        last_loss.copy_(
-            accumulated_loss / training_config.gradient_accumulation_steps
-        )
+        last_loss.copy_(accumulated_loss / training_config.gradient_accumulation_steps)
         running_loss.add_(last_loss)
         running_tokens.add_(step_tokens)
         total_tokens.add_(step_tokens)
@@ -403,9 +403,7 @@ def train_model(
             running_tokens_value = int(running_tokens.item())
             metrics = {
                 "step": completed_step,
-                "training_loss": (
-                    running_loss_value / training_config.log_interval
-                ),
+                "training_loss": (running_loss_value / training_config.log_interval),
                 "training_perplexity": math.exp(
                     min(
                         20.0,

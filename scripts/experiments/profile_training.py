@@ -147,17 +147,13 @@ def _event_rows(profiler: Any, *, limit: int = 30) -> list[dict[str, object]]:
                 "name": str(event.key),
                 "calls": int(event.count),
                 "self_device_time_us": self_device_time,
-                "device_time_total_us": _event_metric(
-                    event, "device_time_total"
-                ),
+                "device_time_total_us": _event_metric(event, "device_time_total"),
                 "self_device_percent": (
                     100.0 * self_device_time / total_self_device_time
                     if total_self_device_time
                     else 0.0
                 ),
-                "self_cpu_time_us": _event_metric(
-                    event, "self_cpu_time_total"
-                ),
+                "self_cpu_time_us": _event_metric(event, "self_cpu_time_total"),
                 "device_memory_usage_bytes": int(
                     _event_metric(event, "device_memory_usage")
                 ),
@@ -222,9 +218,7 @@ def _hotspot_summary(profiler: Any, profile_steps: int) -> dict[str, object]:
     def summed_self_device_time(*keys: str) -> float:
         return sum(maximum_metric(key, "self_device_time_total") for key in keys)
 
-    training_step_device_time = maximum_metric(
-        "training_step", "device_time_total"
-    )
+    training_step_device_time = maximum_metric("training_step", "device_time_total")
 
     def component(device_time_us: float) -> dict[str, float]:
         return {
@@ -242,19 +236,13 @@ def _hotspot_summary(profiler: Any, profile_steps: int) -> dict[str, object]:
             training_step_device_time / profile_steps
         ),
         "attention": component(
-            maximum_metric(
-                "aten::_efficient_attention_forward", "device_time_total"
-            )
-            + maximum_metric(
-                "aten::_efficient_attention_backward", "device_time_total"
-            )
+            maximum_metric("aten::_efficient_attention_forward", "device_time_total")
+            + maximum_metric("aten::_efficient_attention_backward", "device_time_total")
         ),
         "matrix_multiplication": component(
             summed_self_device_time("aten::mm", "aten::addmm")
         ),
-        "gelu": component(
-            summed_self_device_time("aten::gelu", "aten::gelu_backward")
-        ),
+        "gelu": component(summed_self_device_time("aten::gelu", "aten::gelu_backward")),
         "layer_norm": component(
             summed_self_device_time(
                 "aten::native_layer_norm",
@@ -385,9 +373,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             "torch": torch.__version__,
             "device": str(device),
             "gpu": (
-                torch.cuda.get_device_name(device)
-                if device.type == "cuda"
-                else None
+                torch.cuda.get_device_name(device) if device.type == "cuda" else None
             ),
         },
         "settings": {
@@ -414,9 +400,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             "last_loss": float(last_loss.item()),
             "last_step_tokens": int(last_tokens.item()),
             "ranges": _range_rows(profiler),
-            "hotspot_summary": _hotspot_summary(
-                profiler, args.profile_steps
-            ),
+            "hotspot_summary": _hotspot_summary(profiler, args.profile_steps),
             "top_self_device_operations": _event_rows(profiler),
         },
         "artifacts": {

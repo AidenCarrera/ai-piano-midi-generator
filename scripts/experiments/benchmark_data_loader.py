@@ -20,6 +20,7 @@ from ai_piano_midi_generator.dataset import (
     default_pad_token_id,
 )
 from ai_piano_midi_generator.tokenizer import ExpressiveMidiTokenizer
+from ai_piano_midi_generator.training import select_device
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -36,14 +37,6 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--measured-epochs", type=int, default=3)
     parser.add_argument("--device", choices=["auto", "cuda", "cpu"], default="auto")
     return parser
-
-
-def _select_device(requested: str) -> torch.device:
-    if requested == "cuda" and not torch.cuda.is_available():
-        raise RuntimeError("CUDA was requested but is unavailable")
-    if requested == "cpu":
-        return torch.device("cpu")
-    return torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 def _synchronize(device: torch.device) -> None:
@@ -124,7 +117,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if any(workers < 0 for workers in args.workers):
         raise ValueError("worker counts must be non-negative")
 
-    device = _select_device(args.device)
+    device = select_device(args.device)
     tokenizer = ExpressiveMidiTokenizer()
     setup_started = time.perf_counter()
     dataset = TokenChunkDataset(
@@ -134,7 +127,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         context_length=args.context_length,
     )
     dataset_setup_seconds = time.perf_counter() - setup_started
-    cached_token_bytes = int(getattr(dataset, "cached_token_bytes", 0))
+    cached_token_bytes = dataset.cached_token_bytes
     results = [
         _benchmark_workers(
             dataset,
@@ -154,9 +147,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             "torch": torch.__version__,
             "device": str(device),
             "gpu": (
-                torch.cuda.get_device_name(device)
-                if device.type == "cuda"
-                else None
+                torch.cuda.get_device_name(device) if device.type == "cuda" else None
             ),
         },
         "settings": {
