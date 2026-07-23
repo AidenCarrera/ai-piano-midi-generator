@@ -82,12 +82,19 @@ class TokenChunkDataset(Dataset[tuple[torch.Tensor, torch.Tensor]]):
             raise ValueError(f"No performances found for split {split}")
 
         chunks: list[ChunkReference] = []
+        token_arrays: dict[Path, np.ndarray] = {}
         for row in rows:
             token_path_value = _string_field(row, "token_array_path")
             token_path = Path(token_path_value)
             if not token_path.is_absolute():
                 token_path = (Path.cwd() / token_path).resolve()
-            token_ids = np.load(token_path, mmap_mode="r", allow_pickle=False)
+            token_ids = token_arrays.get(token_path)
+            if token_ids is None:
+                token_ids = np.load(token_path, allow_pickle=False)
+                if token_ids.ndim != 1:
+                    raise ValueError(f"Token array must be one-dimensional: {token_path}")
+                token_ids.setflags(write=False)
+                token_arrays[token_path] = token_ids
             tokens = tokenizer.ids_to_tokens(token_ids)
             plans = plan_state_safe_chunks(tokens, context_length + 1)
             for plan in plans:
@@ -111,13 +118,14 @@ class TokenChunkDataset(Dataset[tuple[torch.Tensor, torch.Tensor]]):
         if not chunks:
             raise ValueError(f"No trainable chunks found for split {split}")
         self.chunks = tuple(chunks)
+        self._token_arrays = token_arrays
 
     def __len__(self) -> int:
         return len(self.chunks)
 
     def __getitem__(self, index: int) -> tuple[torch.Tensor, torch.Tensor]:
         reference = self.chunks[index]
-        stored = np.load(reference.token_array_path, mmap_mode="r", allow_pickle=False)
+        stored = self._token_arrays[reference.token_array_path]
         raw = np.asarray(
             stored[reference.plan.start : reference.plan.end], dtype=np.int64
         )
@@ -137,6 +145,11 @@ class TokenChunkDataset(Dataset[tuple[torch.Tensor, torch.Tensor]]):
     @property
     def performance_files(self) -> tuple[str, ...]:
         return tuple(sorted({chunk.source_file for chunk in self.chunks}))
+
+    @property
+    def cached_token_bytes(self) -> int:
+        """Return the in-memory size of the split's unique token arrays."""
+        return sum(array.nbytes for array in self._token_arrays.values())
 
 
 def collate_token_chunks(

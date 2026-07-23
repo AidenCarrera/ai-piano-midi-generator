@@ -229,6 +229,14 @@ device between log intervals; CUDA is synchronized only at explicit timing and
 metric boundaries so throughput measurements include completed GPU work. A
 resumed report leaves fresh-model loss reduction unset because it would not be
 a meaningful comparison.
+
+Token arrays are loaded once into a read-only per-split memory cache instead of
+reopening an `.npy` file for every chunk. On the current Windows/CUDA system,
+the fixed-batch loader benchmark selected zero workers: its cached median epoch
+was 0.0267 seconds, versus 0.0544 with two workers and 0.0553 with four. The
+repeatable benchmark is `scripts/benchmark_data_loader.py`, with results stored
+in `reports/benchmarks/data_loader_cache.json`.
+
 The explicit equivalents are:
 
 ```powershell

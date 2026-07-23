@@ -1,0 +1,68 @@
+{
+  "benchmark": "token_array_cache_and_worker_count",
+  "environment": {
+    "device": "cuda",
+    "gpu": "NVIDIA GeForce RTX 2060 SUPER",
+    "platform": "Windows 11",
+    "python": "3.13.5",
+    "torch": "2.13.0+cu130"
+  },
+  "settings": {
+    "batch_size": 8,
+    "context_length": 2048,
+    "drop_last": true,
+    "manifest": "data/manifests/tokenized_dataset.jsonl",
+    "measured_epochs": 3,
+    "persistent_workers_when_nonzero": true,
+    "pin_memory": true,
+    "samples_per_epoch": 1272,
+    "warmup_epochs": 1
+  },
+  "uncached": {
+    "dataset_setup_seconds": 11.153871299989987,
+    "results": [
+      {
+        "median_epoch_seconds": 0.48451350000686944,
+        "median_samples_per_second": 2625.3138457070145,
+        "workers": 0
+      },
+      {
+        "median_epoch_seconds": 0.26978229999076575,
+        "median_samples_per_second": 4714.9127279422655,
+        "workers": 2
+      },
+      {
+        "median_epoch_seconds": 0.16396530001657084,
+        "median_samples_per_second": 7757.738984232931,
+        "workers": 4
+      }
+    ]
+  },
+  "cached": {
+    "cached_training_token_bytes": 4600826,
+    "dataset_setup_seconds": 10.758051699958742,
+    "results": [
+      {
+        "median_epoch_seconds": 0.026699200039729476,
+        "median_samples_per_second": 47641.87683927658,
+        "workers": 0
+      },
+      {
+        "median_epoch_seconds": 0.05439100001240149,
+        "median_samples_per_second": 23386.221979922706,
+        "workers": 2
+      },
+      {
+        "median_epoch_seconds": 0.05528139998205006,
+        "median_samples_per_second": 23009.547522548633,
+        "workers": 4
+      }
+    ]
+  },
+  "decision": {
+    "cached_worker_zero_speedup_over_uncached_worker_zero": 18.14711674079725,
+    "selected_workers": 0,
+    "selection_reason": "The in-process cache makes Windows worker IPC slower than main-process loading."
+  },
+  "scope_note": "This isolates data loading, collation, pinned-memory transfer, and host-to-device copy. It does not claim an equivalent end-to-end training speedup."
+}

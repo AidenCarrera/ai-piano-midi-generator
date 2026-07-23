@@ -25,7 +25,7 @@ def write_array(
 
 
 def test_dataset_loads_only_requested_split_and_reconstructs_state(
-    tmp_path: Path,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     tokenizer = ExpressiveMidiTokenizer()
     train_tokens = (
@@ -94,6 +94,12 @@ def test_dataset_loads_only_requested_split_and_reconstructs_state(
         "VELOCITY_8",
         "NOTE_ON_60",
     )
+    assert dataset.cached_token_bytes > 0
+
+    def reject_reopen(*args: object, **kwargs: object) -> np.ndarray:
+        raise AssertionError(f"np.load called after dataset setup: {args}, {kwargs}")
+
+    monkeypatch.setattr(np, "load", reject_reopen)
     inputs, targets = dataset[1]
     assert inputs.numel() <= 8
     assert targets.shape == inputs.shape
