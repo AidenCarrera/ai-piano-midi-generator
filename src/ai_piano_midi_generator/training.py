@@ -18,6 +18,15 @@ from torch import nn
 
 from ai_piano_midi_generator.model import PianoTransformer, TransformerConfig
 
+COMPILE_MODES = frozenset(
+    {
+        "default",
+        "reduce-overhead",
+        "max-autotune",
+        "max-autotune-no-cudagraphs",
+    }
+)
+
 
 @dataclass(frozen=True, slots=True)
 class TrainingConfig:
@@ -38,6 +47,8 @@ class TrainingConfig:
     amp: bool = True
     deterministic: bool = False
     fused_adamw: bool = True
+    compile_model: bool = False
+    compile_mode: str = "default"
 
     def __post_init__(self) -> None:
         positive_integers = (
@@ -63,8 +74,11 @@ class TrainingConfig:
             raise ValueError("gradient_clip_norm must be positive")
         if self.data_loader_workers < 0:
             raise ValueError("data_loader_workers must be non-negative")
+        if self.compile_mode not in COMPILE_MODES:
+            choices = ", ".join(sorted(COMPILE_MODES))
+            raise ValueError(f"compile_mode must be one of: {choices}")
 
-    def to_dict(self) -> dict[str, int | float | bool]:
+    def to_dict(self) -> dict[str, int | float | bool | str]:
         return asdict(self)
 
 
@@ -313,6 +327,9 @@ def train_model(
         )
         start_step = int(checkpoint["step"])
         best_validation_loss = float(checkpoint["best_validation_loss"])
+
+    if training_config.compile_model:
+        model.compile(dynamic=False, mode=training_config.compile_mode)
 
     step_limit = (
         training_config.maximum_steps if maximum_steps is None else maximum_steps

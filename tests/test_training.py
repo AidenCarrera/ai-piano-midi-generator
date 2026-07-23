@@ -130,6 +130,11 @@ def test_training_config_rejects_invalid_optimizer_settings() -> None:
     assert cpu_optimizer.defaults["fused"] is False
 
 
+def test_training_config_rejects_unknown_compile_mode() -> None:
+    with pytest.raises(ValueError, match="compile_mode"):
+        TrainingConfig(compile_mode="fastest")
+
+
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is unavailable")
 def test_build_optimizer_uses_fused_adamw_on_cuda() -> None:
     model = small_model(32).cuda()
@@ -194,6 +199,53 @@ def test_train_model_runs_one_step_and_writes_resumable_checkpoints(
     assert summary["final_validation_loss"] > 0
     assert (tmp_path / "best.pt").is_file()
     assert (tmp_path / "latest.pt").is_file()
+
+
+def test_train_model_compiles_in_place_with_configured_mode(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    model = small_model(32)
+    config = TrainingConfig(
+        batch_size=1,
+        gradient_accumulation_steps=1,
+        maximum_steps=1,
+        warmup_steps=0,
+        evaluation_interval=1,
+        evaluation_batches=1,
+        checkpoint_interval=1,
+        log_interval=1,
+        amp=False,
+        compile_model=True,
+        compile_mode="max-autotune-no-cudagraphs",
+    )
+    compile_calls: list[dict[str, object]] = []
+
+    def record_compile(
+        self: PianoTransformer, *args: object, **kwargs: object
+    ) -> None:
+        assert self is model
+        assert not args
+        compile_calls.append(kwargs)
+
+    monkeypatch.setattr(PianoTransformer, "compile", record_compile)
+    batch = (
+        torch.tensor([[1, 2, 3, 4]], dtype=torch.long),
+        torch.tensor([[2, 3, 4, 5]], dtype=torch.long),
+    )
+
+    train_model(
+        model=model,
+        train_loader=[batch],
+        validation_loader=[batch],
+        training_config=config,
+        device=torch.device("cpu"),
+        checkpoint_directory=tmp_path,
+        maximum_steps=1,
+    )
+
+    assert compile_calls == [
+        {"dynamic": False, "mode": "max-autotune-no-cudagraphs"}
+    ]
 
 
 def test_sampling_is_deterministic_and_decodes_without_repairs() -> None:

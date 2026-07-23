@@ -213,10 +213,15 @@ AdamW, warmup plus cosine decay, gradient accumulation and clipping, CUDA AMP
 and fused AdamW when enabled and available, seeded random-number generators,
 token-weighted validation, and latest/best checkpoints. Strict deterministic
 kernels are available through `training.deterministic` but are disabled in the
-performance-oriented baseline configuration. Training reports record the
-resolved model/training configuration, dependency versions, and a SHA-256
-digest of the dataset manifest. A resumed report leaves fresh-model loss
-reduction unset because it would not be a meaningful comparison.
+performance-oriented baseline configuration. Set `training.compile_model` to
+`true` to compile the model in place with `dynamic=False`; `training.compile_mode`
+accepts `default`, `reduce-overhead`, `max-autotune`, or
+`max-autotune-no-cudagraphs`. Compilation is opt-in because distinct padded
+sequence lengths can trigger recompilation. The baseline leaves it disabled so
+training also works without a supported Triton installation. Training reports
+record the resolved model/training configuration, dependency versions, and a
+SHA-256 digest of the dataset manifest. A resumed report leaves fresh-model
+loss reduction unset because it would not be a meaningful comparison.
 The explicit equivalents are:
 
 ```powershell

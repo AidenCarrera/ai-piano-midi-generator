@@ -29,6 +29,8 @@ data_loader_workers = 0
 amp = true
 deterministic = false
 fused_adamw = true
+compile_model = false
+compile_mode = "default"
 
 [output]
 checkpoint_directory = "checkpoints/baseline_2048"
