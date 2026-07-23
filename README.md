@@ -210,13 +210,13 @@ uv run python scripts/train.py --resume checkpoints/baseline_2048/latest.pt
 
 The active baseline uses a 2,048-token causal context, shifted next-token loss,
 AdamW, warmup plus cosine decay, gradient accumulation and clipping, CUDA AMP
-when available, seeded random-number generators, token-weighted validation, and
-latest/best checkpoints. Strict deterministic kernels are available through
-`training.deterministic` but are disabled in the performance-oriented baseline
-configuration. Training reports record the resolved model/training
-configuration, dependency versions, and a SHA-256 digest of the dataset
-manifest. A resumed report leaves fresh-model loss reduction unset because it
-would not be a meaningful comparison.
+and fused AdamW when enabled and available, seeded random-number generators,
+token-weighted validation, and latest/best checkpoints. Strict deterministic
+kernels are available through `training.deterministic` but are disabled in the
+performance-oriented baseline configuration. Training reports record the
+resolved model/training configuration, dependency versions, and a SHA-256
+digest of the dataset manifest. A resumed report leaves fresh-model loss
+reduction unset because it would not be a meaningful comparison.
 The explicit equivalents are:
 
 ```powershell

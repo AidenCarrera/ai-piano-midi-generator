@@ -37,6 +37,7 @@ class TrainingConfig:
     data_loader_workers: int = 0
     amp: bool = True
     deterministic: bool = False
+    fused_adamw: bool = True
 
     def __post_init__(self) -> None:
         positive_integers = (
@@ -107,7 +108,7 @@ def learning_rate_at_step(step: int, config: TrainingConfig) -> float:
 
 
 def build_optimizer(model: nn.Module, config: TrainingConfig) -> torch.optim.AdamW:
-    """Create AdamW with weight decay excluded from biases and norms."""
+    """Create device-appropriate AdamW with selective weight decay."""
     decay: list[nn.Parameter] = []
     no_decay: list[nn.Parameter] = []
     for name, parameter in model.named_parameters():
@@ -117,6 +118,10 @@ def build_optimizer(model: nn.Module, config: TrainingConfig) -> torch.optim.Ada
             decay.append(parameter)
         else:
             no_decay.append(parameter)
+    trainable_parameters = [*decay, *no_decay]
+    use_fused = config.fused_adamw and bool(trainable_parameters) and all(
+        parameter.device.type == "cuda" for parameter in trainable_parameters
+    )
     return torch.optim.AdamW(
         [
             {"params": decay, "weight_decay": config.weight_decay},
@@ -124,6 +129,7 @@ def build_optimizer(model: nn.Module, config: TrainingConfig) -> torch.optim.Ada
         ],
         lr=config.learning_rate,
         betas=(0.9, 0.95),
+        fused=use_fused,
     )
 
 

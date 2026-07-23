@@ -28,6 +28,7 @@ seed = 2026
 data_loader_workers = 0
 amp = true
 deterministic = false
+fused_adamw = true
 
 [output]
 checkpoint_directory = "checkpoints/baseline_2048"

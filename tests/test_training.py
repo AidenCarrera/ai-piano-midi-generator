@@ -126,6 +126,23 @@ def test_training_config_rejects_invalid_optimizer_settings() -> None:
     with pytest.raises(ValueError, match="data_loader_workers"):
         TrainingConfig(data_loader_workers=-1)
 
+    cpu_optimizer = build_optimizer(small_model(32), TrainingConfig())
+    assert cpu_optimizer.defaults["fused"] is False
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is unavailable")
+def test_build_optimizer_uses_fused_adamw_on_cuda() -> None:
+    model = small_model(32).cuda()
+    optimizer = build_optimizer(model, TrainingConfig(fused_adamw=True))
+    assert optimizer.defaults["fused"] is True
+
+    inputs = torch.tensor([[1, 2, 3, 4]], device="cuda")
+    targets = torch.tensor([[2, 3, 4, 5]], device="cuda")
+    _, loss = model(inputs, targets)
+    assert loss is not None
+    loss.backward()
+    optimizer.step()
+
 
 def test_seed_and_determinism_are_configured_independently() -> None:
     previous_deterministic = torch.are_deterministic_algorithms_enabled()
