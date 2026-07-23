@@ -103,6 +103,15 @@ def _write_report(path: Path, report: dict[str, object]) -> None:
     temporary.replace(path)
 
 
+def _validate_token_output_path(path: Path) -> None:
+    outputs_root = Path("outputs").resolve()
+    if path.resolve().is_relative_to(outputs_root):
+        raise ValueError(
+            "Token arrays must be stored outside outputs/; use "
+            "artifacts/token-arrays/ or omit --token-output"
+        )
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     settings = _generation_settings(args)
@@ -119,6 +128,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     action = cast(Literal["eos", "mask_time_shifts"], action_value)
     if args.prompt_array and args.prompt_midi:
         raise ValueError("Choose only one prompt source")
+    if args.token_output is not None:
+        _validate_token_output_path(args.token_output)
     device = select_device(args.device)
     model, _ = load_model_checkpoint(args.checkpoint, device=device)
     model.eval()

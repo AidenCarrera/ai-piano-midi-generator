@@ -58,6 +58,13 @@ def build_parser() -> argparse.ArgumentParser:
         default=Path("outputs/baseline_2048/natural_termination"),
     )
     parser.add_argument(
+        "--token-directory",
+        type=Path,
+        default=Path(
+            "artifacts/token-arrays/baseline_2048/natural_termination"
+        ),
+    )
+    parser.add_argument(
         "--json-report",
         type=Path,
         default=Path("reports/baseline_2048/natural_termination.json"),
@@ -103,6 +110,14 @@ def _number(mapping: dict[str, object], name: str) -> float:
     if not isinstance(value, (int, float)):
         raise ValueError(f"{name} must be numeric")
     return float(value)
+
+
+def _validate_token_directory(path: Path) -> None:
+    if path.resolve().is_relative_to(Path("outputs").resolve()):
+        raise ValueError(
+            "Token arrays must be stored outside outputs/; use "
+            "artifacts/token-arrays/ for --token-directory"
+        )
 
 
 def _number_list(mapping: dict[str, object], name: str) -> list[float]:
@@ -547,6 +562,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     if args.resume and args.overwrite:
         raise ValueError("Choose either --resume or --overwrite")
+    _validate_token_directory(args.token_directory)
     generation, prompting = _config(args.config)
     temperatures = _number_list(generation, "temperatures")
     seeds = _integer_list(generation, "seeds")
@@ -613,7 +629,10 @@ def main(argv: Sequence[str] | None = None) -> int:
                     args.output_directory / mode / _temperature_name(temperature)
                 )
                 midi_path = directory / f"seed_{seed}.mid"
-                token_path = directory / f"seed_{seed}.npy"
+                token_path = (
+                    args.token_directory / mode / _temperature_name(temperature)
+                    / f"seed_{seed}.npy"
+                )
                 if not args.overwrite:
                     for path in (midi_path, token_path):
                         if path.exists():

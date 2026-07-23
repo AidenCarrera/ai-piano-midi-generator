@@ -42,6 +42,7 @@ reports/figures/
 # Model and training artifacts
 checkpoints/
 outputs/
+artifacts/
 *.pt
 *.pth
 *.ckpt

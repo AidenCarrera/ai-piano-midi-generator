@@ -16,15 +16,17 @@ scripts/experiments/        Reproducible model-analysis experiments
 src/ai_piano_midi_generator/ Reusable library code
 tests/                      Automated tests
 checkpoints/                Local model checkpoints, organized by baseline
-outputs/                    Local generated MIDI/token artifacts by baseline
+outputs/                    Local generated MIDI files, organized by baseline
+artifacts/token-arrays/     Generated token arrays, mirroring outputs/ runs
 reports/                    Generated reports by pipeline phase and baseline
 reports/figures/            Generated dataset and experiment figures
 ```
 
-Historical experiment reports and outputs live under `reports/archive/` and
-the corresponding model's `outputs/.../archive/` directory. Checkpoints,
-outputs, generated reports, raw data, and processed data are local artifacts and
-are intentionally ignored by Git.
+Historical experiment reports and MIDI outputs live under `reports/archive/`
+and the corresponding model's `outputs/.../archive/` directory. Generated token
+arrays live under `artifacts/token-arrays/` with the same baseline and experiment
+subdirectories as their MIDI files. Checkpoints, outputs, artifacts, generated
+reports, raw data, and processed data are intentionally ignored by Git.
 
 The retired 1,024-context run is preserved under the archive directories in
 `reports/archive/`, `checkpoints/archive/`, and `outputs/archive/`. Active
@@ -279,7 +281,8 @@ records natural EOS position, cap endings, notes, duration, state repairs, and
 dataset-derived degeneracy flags. If interrupted, continue with `--resume`.
 The generated DAW audition queue deliberately keeps automated validity and
 human judgments such as completeness, repetition, and harmonic coherence
-separate.
+separate. MIDI files are written under `outputs/`; NumPy token traces used by
+the diagnostics are written under `artifacts/token-arrays/`.
 
 Evaluate the best checkpoint once on the held-out test split and generate
 matched unconditional and prompted samples with:
