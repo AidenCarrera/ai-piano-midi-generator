@@ -237,6 +237,13 @@ was 0.0267 seconds, versus 0.0544 with two workers and 0.0553 with four. The
 repeatable benchmark is `scripts/benchmark_data_loader.py`, with results stored
 in `reports/benchmarks/data_loader_cache.json`.
 
+The representative PyTorch profiler capture is reproducible with
+`scripts/profile_training.py`. Its summary is stored in
+`reports/benchmarks/training_profile.md`: attention and matrix multiplication
+accounted for 76.69% of device time, while GELU, gradient clipping, the fused
+optimizer, cached loading, and host-to-device transfer were each too small to
+justify isolated micro-optimizations.
+
 The explicit equivalents are:
 
 ```powershell

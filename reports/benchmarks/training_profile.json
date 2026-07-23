@@ -1,0 +1,386 @@
+{
+  "artifacts": {
+    "chrome_trace": "artifacts/profiler/training_trace.json"
+  },
+  "environment": {
+    "device": "cuda",
+    "gpu": "NVIDIA GeForce RTX 2060 SUPER",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "python": "3.13.5",
+    "torch": "2.13.0+cu130"
+  },
+  "interpretation_note": "Profiler instrumentation adds overhead; use CUDA-time shares to find hotspots, not the profiled wall time as a throughput benchmark.",
+  "profile": {
+    "hotspot_summary": {
+      "attention": {
+        "device_time_per_step_us": 89878.71069999991,
+        "device_time_total_us": 898787.1069999991,
+        "training_step_device_percent": 44.13923429111382
+      },
+      "data_loading_cpu_time_per_step_us": 759.201600000025,
+      "gelu": {
+        "device_time_per_step_us": 6781.89490000007,
+        "device_time_total_us": 67818.9490000007,
+        "training_step_device_percent": 3.3305734539070704
+      },
+      "gradient_clipping": {
+        "device_time_per_step_us": 1112.9611999999966,
+        "device_time_total_us": 11129.611999999965,
+        "training_step_device_percent": 0.5465727621270727
+      },
+      "host_to_device": {
+        "device_time_per_step_us": 41.696600000013994,
+        "device_time_total_us": 416.96600000013996,
+        "training_step_device_percent": 0.020477107228280216
+      },
+      "layer_norm": {
+        "device_time_per_step_us": 10789.081000000213,
+        "device_time_total_us": 107890.81000000212,
+        "training_step_device_percent": 5.29849360694951
+      },
+      "matrix_multiplication": {
+        "device_time_per_step_us": 66278.29699999993,
+        "device_time_total_us": 662782.9699999993,
+        "training_step_device_percent": 32.54912377930924
+      },
+      "optimizer_step": {
+        "device_time_per_step_us": 1324.0356000000058,
+        "device_time_total_us": 13240.356000000058,
+        "training_step_device_percent": 0.6502309290266196
+      },
+      "training_step_device_time_per_step_us": 203625.4415
+    },
+    "last_loss": 4.800465106964111,
+    "last_step_tokens": 13488,
+    "peak_gpu_memory_mib": 1664.794921875,
+    "ranges": [
+      {
+        "calls": 10,
+        "cpu_time_total_us": 1166851.5269999998,
+        "device_time_total_us": 33.503999999855296,
+        "name": "backward"
+      },
+      {
+        "calls": 10,
+        "cpu_time_total_us": 7592.01600000025,
+        "device_time_total_us": 0.0,
+        "name": "data_loading"
+      },
+      {
+        "calls": 10,
+        "cpu_time_total_us": 336039.8,
+        "device_time_total_us": 626033.6929999997,
+        "name": "forward"
+      },
+      {
+        "calls": 10,
+        "cpu_time_total_us": 47375.59900000018,
+        "device_time_total_us": 11129.611999999965,
+        "name": "gradient_clipping"
+      },
+      {
+        "calls": 10,
+        "cpu_time_total_us": 1186.6020000002673,
+        "device_time_total_us": 416.96600000013996,
+        "name": "host_to_device"
+      },
+      {
+        "calls": 10,
+        "cpu_time_total_us": 84920.9759999997,
+        "device_time_total_us": 13240.356000000058,
+        "name": "optimizer_step"
+      },
+      {
+        "calls": 10,
+        "cpu_time_total_us": 1647263.427,
+        "device_time_total_us": 2036254.4149999998,
+        "name": "training_step"
+      }
+    ],
+    "top_self_device_operations": [
+      {
+        "calls": 60,
+        "device_memory_usage_bytes": 2264924160,
+        "device_time_total_us": 650791.3399999999,
+        "name": "aten::_efficient_attention_backward",
+        "self_cpu_time_us": 2005.13800000043,
+        "self_device_percent": 31.77585973895883,
+        "self_device_time_us": 644245.8489999996
+      },
+      {
+        "calls": 510,
+        "device_memory_usage_bytes": 5792460800,
+        "device_time_total_us": 453173.2729999998,
+        "name": "aten::mm",
+        "self_cpu_time_us": 11485.73200000299,
+        "self_device_percent": 22.351669603528794,
+        "self_device_time_us": 453173.2729999998
+      },
+      {
+        "calls": 60,
+        "device_memory_usage_bytes": 778567680,
+        "device_time_total_us": 247995.76699999924,
+        "name": "aten::_efficient_attention_forward",
+        "self_cpu_time_us": 1193.52799999731,
+        "self_device_percent": 12.036747674774155,
+        "self_device_time_us": 244041.38199999923
+      },
+      {
+        "calls": 240,
+        "device_memory_usage_bytes": 6794772480,
+        "device_time_total_us": 209609.6969999994,
+        "name": "aten::addmm",
+        "self_cpu_time_us": 5484.514999999882,
+        "self_device_percent": 10.338488547712233,
+        "self_device_time_us": 209609.6969999994
+      },
+      {
+        "calls": 1630,
+        "device_memory_usage_bytes": 0,
+        "device_time_total_us": 83756.18500000113,
+        "name": "aten::copy_",
+        "self_cpu_time_us": 7260.212999993964,
+        "self_device_percent": 4.041402939984471,
+        "self_device_time_us": 81938.21000000116
+      },
+      {
+        "calls": 130,
+        "device_memory_usage_bytes": 3271956480,
+        "device_time_total_us": 72588.42100000066,
+        "name": "aten::native_layer_norm_backward",
+        "self_cpu_time_us": 2472.515000001311,
+        "self_device_percent": 3.5802473356231372,
+        "self_device_time_us": 72588.42100000066
+      },
+      {
+        "calls": 260,
+        "device_memory_usage_bytes": 31923200,
+        "device_time_total_us": 41081.62300000181,
+        "name": "aten::sum",
+        "self_cpu_time_us": 5785.839000000478,
+        "self_device_percent": 2.024945874264696,
+        "self_device_time_us": 41055.159000001644
+      },
+      {
+        "calls": 150,
+        "device_memory_usage_bytes": 3271567360,
+        "device_time_total_us": 42250.47899999965,
+        "name": "aten::add",
+        "self_cpu_time_us": 1797.4719999999656,
+        "self_device_percent": 1.986887742260712,
+        "self_device_time_us": 40283.541999999616
+      },
+      {
+        "calls": 150,
+        "device_memory_usage_bytes": 0,
+        "device_time_total_us": 39771.31399999983,
+        "name": "aten::add_",
+        "self_cpu_time_us": 1750.6880000001706,
+        "self_device_percent": 1.961623341865079,
+        "self_device_time_us": 39771.31399999983
+      },
+      {
+        "calls": 60,
+        "device_memory_usage_bytes": 3019898880,
+        "device_time_total_us": 38155.705999999496,
+        "name": "aten::gelu_backward",
+        "self_cpu_time_us": 839.5299999989784,
+        "self_device_percent": 1.8819374063160392,
+        "self_device_time_us": 38155.705999999496
+      },
+      {
+        "calls": 130,
+        "device_memory_usage_bytes": 3288596480,
+        "device_time_total_us": 36465.79600000148,
+        "name": "aten::native_layer_norm",
+        "self_cpu_time_us": 3080.9979999945995,
+        "self_device_percent": 1.7412044843679084,
+        "self_device_time_us": 35302.38900000147
+      },
+      {
+        "calls": 60,
+        "device_memory_usage_bytes": 3019898880,
+        "device_time_total_us": 29663.24300000121,
+        "name": "aten::gelu",
+        "self_cpu_time_us": 713.3019999992393,
+        "self_device_percent": 1.4630673219451218,
+        "self_device_time_us": 29663.24300000121
+      },
+      {
+        "calls": 130,
+        "device_memory_usage_bytes": 2581463040,
+        "device_time_total_us": 24373.967000000674,
+        "name": "aten::native_dropout",
+        "self_cpu_time_us": 1869.6339999987172,
+        "self_device_percent": 1.1977152103585873,
+        "self_device_time_us": 24283.310000000783
+      },
+      {
+        "calls": 70,
+        "device_memory_usage_bytes": 2264929280,
+        "device_time_total_us": 20479.354999999254,
+        "name": "aten::cat",
+        "self_cpu_time_us": 1320.6089999994492,
+        "self_device_percent": 1.0100943809485405,
+        "self_device_time_us": 20479.354999999254
+      },
+      {
+        "calls": 130,
+        "device_memory_usage_bytes": 1761607680,
+        "device_time_total_us": 15957.950000001452,
+        "name": "aten::native_dropout_backward",
+        "self_cpu_time_us": 1346.1060000007037,
+        "self_device_percent": 0.7870870750792599,
+        "self_device_time_us": 15957.950000001452
+      },
+      {
+        "calls": 20,
+        "device_memory_usage_bytes": 0,
+        "device_time_total_us": 12112.148999999597,
+        "name": "aten::_fused_adamw_",
+        "self_cpu_time_us": 360.0000000010841,
+        "self_device_percent": 0.59740229348588,
+        "self_device_time_us": 12112.148999999597
+      },
+      {
+        "calls": 160,
+        "device_memory_usage_bytes": 0,
+        "device_time_total_us": 7662.496999999623,
+        "name": "aten::fill_",
+        "self_cpu_time_us": 1110.1070000003488,
+        "self_device_percent": 0.37783617386793417,
+        "self_device_time_us": 7660.5129999996225
+      },
+      {
+        "calls": 10,
+        "device_memory_usage_bytes": 0,
+        "device_time_total_us": 3762.800999999803,
+        "name": "aten::_foreach_mul_",
+        "self_cpu_time_us": 165.9020000000819,
+        "self_device_percent": 0.18559100844374682,
+        "self_device_time_us": 3762.800999999803
+      },
+      {
+        "calls": 10,
+        "device_memory_usage_bytes": 389120,
+        "device_time_total_us": 3510.0929999999644,
+        "name": "aten::_foreach_norm",
+        "self_cpu_time_us": 1522.302000000309,
+        "self_device_percent": 0.1724686405644917,
+        "self_device_time_us": 3496.749000000069
+      },
+      {
+        "calls": 10,
+        "device_memory_usage_bytes": 0,
+        "device_time_total_us": 3205.863000000245,
+        "name": "aten::_amp_foreach_non_finite_check_and_unscale_",
+        "self_cpu_time_us": 151.5000000000873,
+        "self_device_percent": 0.15812139602986502,
+        "self_device_time_us": 3205.863000000245
+      },
+      {
+        "calls": 20,
+        "device_memory_usage_bytes": 37478400,
+        "device_time_total_us": 2602.6859999990556,
+        "name": "aten::embedding_dense_backward",
+        "self_cpu_time_us": 2115.16900000046,
+        "self_device_percent": 0.12448532818852974,
+        "self_device_time_us": 2523.901999999536
+      },
+      {
+        "calls": 10,
+        "device_memory_usage_bytes": 128450560,
+        "device_time_total_us": 1888.2150000001711,
+        "name": "aten::_log_softmax_backward_data",
+        "self_cpu_time_us": 98.1009999998605,
+        "self_device_percent": 0.09313161286197688,
+        "self_device_time_us": 1888.2150000001711
+      },
+      {
+        "calls": 20,
+        "device_memory_usage_bytes": 0,
+        "device_time_total_us": 922.2829999998785,
+        "name": "aten::gather",
+        "self_cpu_time_us": 222.80099999983258,
+        "self_device_percent": 0.04548936604420764,
+        "self_device_time_us": 922.2829999998785
+      },
+      {
+        "calls": 10,
+        "device_memory_usage_bytes": 128450560,
+        "device_time_total_us": 699.2719999999172,
+        "name": "aten::_log_softmax",
+        "self_cpu_time_us": 188.70100000042294,
+        "self_device_percent": 0.034489890817097996,
+        "self_device_time_us": 699.2719999999172
+      },
+      {
+        "calls": 10,
+        "device_memory_usage_bytes": 10240,
+        "device_time_total_us": 215.1359999996639,
+        "name": "aten::nll_loss_forward",
+        "self_cpu_time_us": 240.72799999984818,
+        "self_device_percent": 0.009787175826589212,
+        "self_device_time_us": 198.43199999975332
+      },
+      {
+        "calls": 10,
+        "device_memory_usage_bytes": 256901120,
+        "device_time_total_us": 1171.3779999998224,
+        "name": "aten::nll_loss_backward",
+        "self_cpu_time_us": 183.90200000017103,
+        "self_device_percent": 0.008529450340891087,
+        "self_device_time_us": 172.93199999978242
+      },
+      {
+        "calls": 20,
+        "device_memory_usage_bytes": 0,
+        "device_time_total_us": 62.40000000002328,
+        "name": "aten::_foreach_sub_",
+        "self_cpu_time_us": 389.96100000009756,
+        "self_device_percent": 0.0023248685683981314,
+        "self_device_time_us": 47.136000000173226
+      },
+      {
+        "calls": 20,
+        "device_memory_usage_bytes": 0,
+        "device_time_total_us": 39.455999999976484,
+        "name": "aten::_foreach_add_",
+        "self_cpu_time_us": 197.59999999973297,
+        "self_device_percent": 0.0019460712456365599,
+        "self_device_time_us": 39.455999999976484
+      },
+      {
+        "calls": 10,
+        "device_memory_usage_bytes": 5120,
+        "device_time_total_us": 37.72900000025402,
+        "name": "aten::linalg_vector_norm",
+        "self_cpu_time_us": 238.40200000023106,
+        "self_device_percent": 0.001860891170599145,
+        "self_device_time_us": 37.72900000025402
+      },
+      {
+        "calls": 30,
+        "device_memory_usage_bytes": 15360,
+        "device_time_total_us": 35.32800000019779,
+        "name": "aten::mul",
+        "self_cpu_time_us": 1038.4009999999016,
+        "self_device_percent": 0.0017424676846683465,
+        "self_device_time_us": 35.32800000019779
+      }
+    ],
+    "wall_seconds_including_profiler_overhead": 2.689231199969072
+  },
+  "settings": {
+    "amp": true,
+    "batch_size": 8,
+    "compile_model": false,
+    "config": "configs/training_baseline_2048.toml",
+    "context_length": 2048,
+    "fused_adamw": true,
+    "gradient_accumulation_steps": 1,
+    "gradient_clip_norm": 1.0,
+    "profile_steps": 10,
+    "warmup_steps": 5
+  }
+}
