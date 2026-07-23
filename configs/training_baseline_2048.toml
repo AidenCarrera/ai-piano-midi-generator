@@ -27,6 +27,7 @@ log_interval = 10
 seed = 2026
 data_loader_workers = 0
 amp = true
+deterministic = false
 
 [output]
 checkpoint_directory = "checkpoints/baseline_2048"

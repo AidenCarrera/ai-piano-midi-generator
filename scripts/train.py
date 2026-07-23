@@ -28,9 +28,10 @@ from ai_piano_midi_generator.model import PianoTransformer, TransformerConfig
 from ai_piano_midi_generator.tokenizer import ExpressiveMidiTokenizer
 from ai_piano_midi_generator.training import (
     TrainingConfig,
+    configure_determinism,
     evaluate_loss,
     select_device,
-    set_deterministic_seed,
+    set_random_seed,
     train_model,
 )
 
@@ -114,7 +115,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     tokenizer = ExpressiveMidiTokenizer()
     if tokenizer.vocabulary_size != model_config.vocabulary_size:
         raise ValueError("Tokenizer and model vocabulary sizes differ")
-    set_deterministic_seed(training_config.seed)
+    set_random_seed(training_config.seed)
+    configure_determinism(training_config.deterministic)
 
     maximum_train_chunks = None
     maximum_validation_chunks = None

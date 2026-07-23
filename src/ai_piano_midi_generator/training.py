@@ -36,6 +36,7 @@ class TrainingConfig:
     seed: int = 2026
     data_loader_workers: int = 0
     amp: bool = True
+    deterministic: bool = False
 
     def __post_init__(self) -> None:
         positive_integers = (
@@ -66,16 +67,20 @@ class TrainingConfig:
         return asdict(self)
 
 
-def set_deterministic_seed(seed: int) -> None:
-    """Seed Python, NumPy, and PyTorch with deterministic-kernel preference."""
+def set_random_seed(seed: int) -> None:
+    """Seed Python, NumPy, and PyTorch random-number generators."""
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
-    torch.backends.cudnn.benchmark = False
-    torch.backends.cudnn.deterministic = True
-    torch.use_deterministic_algorithms(True)
+
+
+def configure_determinism(enabled: bool) -> None:
+    """Select strict reproducibility or faster backend algorithm selection."""
+    torch.backends.cudnn.benchmark = not enabled
+    torch.backends.cudnn.deterministic = enabled
+    torch.use_deterministic_algorithms(enabled, warn_only=False)
 
 
 def select_device(requested: str = "auto") -> torch.device:
@@ -283,7 +288,8 @@ def train_model(
     maximum_steps: int | None = None,
 ) -> dict[str, float | int | str]:
     """Train, validate, checkpoint, and report baseline language-model metrics."""
-    set_deterministic_seed(training_config.seed)
+    set_random_seed(training_config.seed)
+    configure_determinism(training_config.deterministic)
     model.to(device)
     optimizer = build_optimizer(model, training_config)
     amp_enabled = training_config.amp and device.type == "cuda"

@@ -11,10 +11,12 @@ from ai_piano_midi_generator.tokenizer import BOS_TOKEN, ExpressiveMidiTokenizer
 from ai_piano_midi_generator.training import (
     TrainingConfig,
     build_optimizer,
+    configure_determinism,
     evaluate_loss,
     load_checkpoint,
     load_model_checkpoint,
     save_checkpoint,
+    set_random_seed,
     train_model,
 )
 
@@ -125,6 +127,31 @@ def test_training_config_rejects_invalid_optimizer_settings() -> None:
         TrainingConfig(data_loader_workers=-1)
 
 
+def test_seed_and_determinism_are_configured_independently() -> None:
+    previous_deterministic = torch.are_deterministic_algorithms_enabled()
+    previous_benchmark = torch.backends.cudnn.benchmark
+    previous_cudnn_deterministic = torch.backends.cudnn.deterministic
+    try:
+        set_random_seed(42)
+        first = torch.rand(4)
+        set_random_seed(42)
+        assert torch.equal(torch.rand(4), first)
+
+        configure_determinism(True)
+        assert torch.are_deterministic_algorithms_enabled()
+        assert torch.backends.cudnn.deterministic
+        assert not torch.backends.cudnn.benchmark
+
+        configure_determinism(False)
+        assert not torch.are_deterministic_algorithms_enabled()
+        assert not torch.backends.cudnn.deterministic
+        assert torch.backends.cudnn.benchmark
+    finally:
+        torch.backends.cudnn.benchmark = previous_benchmark
+        torch.backends.cudnn.deterministic = previous_cudnn_deterministic
+        torch.use_deterministic_algorithms(previous_deterministic)
+
+
 def test_train_model_runs_one_step_and_writes_resumable_checkpoints(
     tmp_path: Path,
 ) -> None:
@@ -146,6 +173,7 @@ def test_train_model_runs_one_step_and_writes_resumable_checkpoints(
     )
 
     assert summary["steps"] == 1
+    assert isinstance(summary["final_validation_loss"], float)
     assert summary["final_validation_loss"] > 0
     assert (tmp_path / "best.pt").is_file()
     assert (tmp_path / "latest.pt").is_file()
