@@ -224,8 +224,11 @@ shape. Validation keeps its incomplete final batch so every validation chunk is
 measured. The baseline leaves compilation disabled so training also works
 without a supported Triton installation. Training reports record the resolved
 model/training configuration, dependency versions, and a SHA-256 digest of the
-dataset manifest. A resumed report leaves fresh-model loss reduction unset
-because it would not be a meaningful comparison.
+dataset manifest. Training loss and token counters remain on the training
+device between log intervals; CUDA is synchronized only at explicit timing and
+metric boundaries so throughput measurements include completed GPU work. A
+resumed report leaves fresh-model loss reduction unset because it would not be
+a meaningful comparison.
 The explicit equivalents are:
 
 ```powershell

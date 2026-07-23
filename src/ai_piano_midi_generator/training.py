@@ -153,6 +153,12 @@ def _autocast(device: torch.device, enabled: bool):
     return nullcontext()
 
 
+def _synchronize_device(device: torch.device) -> None:
+    """Wait for queued CUDA work at an explicit timing or metric boundary."""
+    if device.type == "cuda":
+        torch.cuda.synchronize(device)
+
+
 @torch.inference_mode()
 def evaluate_loss(
     model: PianoTransformer,
@@ -345,12 +351,13 @@ def train_model(
         torch.cuda.reset_peak_memory_stats(device)
     model.train()
     iterator = iter(train_loader)
-    running_loss = 0.0
-    running_tokens = 0
-    total_tokens = 0
+    running_loss = torch.zeros((), device=device, dtype=torch.float32)
+    running_tokens = torch.zeros((), device=device, dtype=torch.int64)
+    total_tokens = torch.zeros((), device=device, dtype=torch.int64)
+    last_loss = torch.full((), math.nan, device=device, dtype=torch.float32)
+    _synchronize_device(device)
     training_start = time.perf_counter()
-    interval_start = time.perf_counter()
-    last_loss = math.nan
+    interval_start = training_start
     last_validation_loss = math.nan
     final_learning_rate = training_config.learning_rate
 
@@ -360,13 +367,13 @@ def train_model(
         for group in optimizer.param_groups:
             group["lr"] = learning_rate
         optimizer.zero_grad(set_to_none=True)
-        accumulated_loss = 0.0
-        step_tokens = 0
+        accumulated_loss = torch.zeros((), device=device, dtype=torch.float32)
+        step_tokens = torch.zeros((), device=device, dtype=torch.int64)
         for _ in range(training_config.gradient_accumulation_steps):
             (inputs, targets), iterator = _next_batch(iterator, train_loader)
             inputs = inputs.to(device, non_blocking=True)
             targets = targets.to(device, non_blocking=True)
-            step_tokens += int((targets != -100).sum().item())
+            step_tokens.add_((targets != -100).sum())
             with _autocast(device, amp_enabled):
                 _, loss = model(inputs, targets)
                 assert loss is not None
@@ -374,29 +381,39 @@ def train_model(
             scaled_loss_tensor = scaler.scale(scaled_loss)
             assert isinstance(scaled_loss_tensor, torch.Tensor)
             scaled_loss_tensor.backward()
-            accumulated_loss += float(loss.detach().cpu())
+            accumulated_loss.add_(loss.detach())
         scaler.unscale_(optimizer)
         torch.nn.utils.clip_grad_norm_(
             model.parameters(), training_config.gradient_clip_norm
         )
         scaler.step(optimizer)
         scaler.update()
-        last_loss = accumulated_loss / training_config.gradient_accumulation_steps
-        running_loss += last_loss
-        running_tokens += step_tokens
-        total_tokens += step_tokens
+        last_loss.copy_(
+            accumulated_loss / training_config.gradient_accumulation_steps
+        )
+        running_loss.add_(last_loss)
+        running_tokens.add_(step_tokens)
+        total_tokens.add_(step_tokens)
 
         completed_step = step + 1
         if completed_step % training_config.log_interval == 0:
+            _synchronize_device(device)
             elapsed = max(time.perf_counter() - interval_start, 1e-9)
+            running_loss_value = float(running_loss.item())
+            running_tokens_value = int(running_tokens.item())
             metrics = {
                 "step": completed_step,
-                "training_loss": running_loss / training_config.log_interval,
+                "training_loss": (
+                    running_loss_value / training_config.log_interval
+                ),
                 "training_perplexity": math.exp(
-                    min(20.0, running_loss / training_config.log_interval)
+                    min(
+                        20.0,
+                        running_loss_value / training_config.log_interval,
+                    )
                 ),
                 "learning_rate": learning_rate,
-                "tokens_per_second": running_tokens / elapsed,
+                "tokens_per_second": running_tokens_value / elapsed,
                 "peak_gpu_memory_mib": (
                     torch.cuda.max_memory_allocated(device) / 1024**2
                     if device.type == "cuda"
@@ -404,8 +421,8 @@ def train_model(
                 ),
             }
             print(json.dumps(metrics, sort_keys=True), flush=True)
-            running_loss = 0.0
-            running_tokens = 0
+            running_loss.zero_()
+            running_tokens.zero_()
             interval_start = time.perf_counter()
 
         should_evaluate = (
@@ -459,16 +476,19 @@ def train_model(
         if device.type == "cuda"
         else 0.0
     )
+    _synchronize_device(device)
     elapsed_training = max(time.perf_counter() - training_start, 1e-9)
+    last_loss_value = float(last_loss.item())
+    total_tokens_value = int(total_tokens.item())
     return {
         "steps": step_limit,
-        "final_training_loss": last_loss,
-        "final_training_perplexity": math.exp(min(20.0, last_loss)),
+        "final_training_loss": last_loss_value,
+        "final_training_perplexity": math.exp(min(20.0, last_loss_value)),
         "final_validation_loss": last_validation_loss,
         "final_validation_perplexity": math.exp(min(20.0, last_validation_loss)),
         "best_validation_loss": best_validation_loss,
         "final_learning_rate": final_learning_rate,
-        "average_tokens_per_second": total_tokens / elapsed_training,
+        "average_tokens_per_second": total_tokens_value / elapsed_training,
         "parameter_count": model.parameter_count(),
         "peak_gpu_memory_mib": round(peak_memory, 3),
         "device": str(device),

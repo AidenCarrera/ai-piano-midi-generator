@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 import torch
 
+import ai_piano_midi_generator.training as training_module
 from ai_piano_midi_generator.model import PianoTransformer, TransformerConfig
 from ai_piano_midi_generator.sampling import sample_tokens
 from ai_piano_midi_generator.tokenizer import BOS_TOKEN, ExpressiveMidiTokenizer
@@ -199,6 +200,48 @@ def test_train_model_runs_one_step_and_writes_resumable_checkpoints(
     assert summary["final_validation_loss"] > 0
     assert (tmp_path / "best.pt").is_file()
     assert (tmp_path / "latest.pt").is_file()
+
+
+def test_train_model_synchronizes_only_at_timing_boundaries(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    model = small_model(32)
+    config = TrainingConfig(
+        batch_size=1,
+        gradient_accumulation_steps=1,
+        maximum_steps=2,
+        warmup_steps=0,
+        evaluation_interval=2,
+        evaluation_batches=1,
+        checkpoint_interval=2,
+        log_interval=2,
+        amp=False,
+    )
+    synchronization_calls: list[torch.device] = []
+    monkeypatch.setattr(
+        training_module,
+        "_synchronize_device",
+        synchronization_calls.append,
+    )
+    batch = (
+        torch.tensor([[1, 2, 3, 4]], dtype=torch.long),
+        torch.tensor([[2, 3, 4, 5]], dtype=torch.long),
+    )
+
+    train_model(
+        model=model,
+        train_loader=[batch],
+        validation_loader=[batch],
+        training_config=config,
+        device=torch.device("cpu"),
+        checkpoint_directory=tmp_path,
+    )
+
+    assert synchronization_calls == [
+        torch.device("cpu"),
+        torch.device("cpu"),
+        torch.device("cpu"),
+    ]
 
 
 def test_train_model_compiles_in_place_with_configured_mode(
