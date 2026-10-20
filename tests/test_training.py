@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -43,7 +44,6 @@ def small_training_config() -> TrainingConfig:
         maximum_steps=2,
         warmup_steps=0,
         evaluation_interval=1,
-        evaluation_batches=1,
         checkpoint_interval=1,
         log_interval=1,
         amp=False,
@@ -111,7 +111,6 @@ def test_evaluate_loss_is_token_weighted_and_preserves_mode() -> None:
         model,
         [first, second],
         device=torch.device("cpu"),
-        maximum_batches=2,
         amp=False,
     )
 
@@ -193,6 +192,7 @@ def test_train_model_runs_one_step_and_writes_resumable_checkpoints(
         device=torch.device("cpu"),
         checkpoint_directory=tmp_path,
         maximum_steps=1,
+        history_path=tmp_path / "history.jsonl",
     )
 
     assert summary["steps"] == 1
@@ -200,6 +200,13 @@ def test_train_model_runs_one_step_and_writes_resumable_checkpoints(
     assert summary["final_validation_loss"] > 0
     assert (tmp_path / "best.pt").is_file()
     assert (tmp_path / "latest.pt").is_file()
+    history = [
+        json.loads(line)
+        for line in (tmp_path / "history.jsonl").read_text().splitlines()
+    ]
+    assert [row["step"] for row in history] == [1, 1]
+    assert "training_loss" in history[0]
+    assert history[1]["validation_loss"] == summary["final_validation_loss"]
 
 
 def test_train_model_synchronizes_only_at_timing_boundaries(
@@ -212,7 +219,6 @@ def test_train_model_synchronizes_only_at_timing_boundaries(
         maximum_steps=2,
         warmup_steps=0,
         evaluation_interval=2,
-        evaluation_batches=1,
         checkpoint_interval=2,
         log_interval=2,
         amp=False,
@@ -254,7 +260,6 @@ def test_train_model_compiles_in_place_with_configured_mode(
         maximum_steps=1,
         warmup_steps=0,
         evaluation_interval=1,
-        evaluation_batches=1,
         checkpoint_interval=1,
         log_interval=1,
         amp=False,

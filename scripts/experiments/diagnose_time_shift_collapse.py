@@ -11,6 +11,7 @@ from pathlib import Path
 import numpy as np
 import torch
 
+from ai_piano_midi_generator.data.preparation import fit_to_context
 from ai_piano_midi_generator.evaluation import write_json_report
 from ai_piano_midi_generator.generation_diagnostics import (
     DEFAULT_ROLLING_WINDOW,
@@ -155,9 +156,9 @@ def _grammar_mask(
     state: dict[str, bool],
     device: torch.device,
 ) -> torch.Tensor:
+    # EOS stays legal: natural-termination samples allow it from the first token.
     allowed = torch.ones(tokenizer.vocabulary_size, dtype=torch.bool, device=device)
     allowed[tokenizer.token_to_id[BOS_TOKEN]] = False
-    allowed[tokenizer.token_to_id[EOS_TOKEN]] = False
     if not state["velocity"]:
         for pitch in range(128):
             allowed[tokenizer.token_to_id[f"NOTE_ON_{pitch}"]] = False
@@ -208,6 +209,7 @@ def _top_tokens(
 def _probability_snapshots(
     model: PianoTransformer,
     tokenizer: ExpressiveMidiTokenizer,
+    prompt_tokens: tuple[str, ...],
     model_tokens: tuple[str, ...],
     indices: set[int],
     *,
@@ -216,9 +218,11 @@ def _probability_snapshots(
     top_p: float,
 ) -> list[dict[str, object]]:
     device = next(model.parameters()).device
-    prefix = [BOS_TOKEN]
+    prefix = list(prompt_tokens)
     active_notes: dict[int, int] = {}
     state = {"pedal": False, "velocity": False}
+    for token in prompt_tokens:
+        _advance_state(token, active_notes, state)
     time_shift_ids = torch.tensor(
         [
             token_id
@@ -234,10 +238,13 @@ def _probability_snapshots(
     for index, selected_token in enumerate(model_tokens):
         if index in indices:
             input_ids = torch.tensor(
-                [tokenizer.token_to_id[token] for token in prefix],
+                [
+                    tokenizer.token_to_id[token]
+                    for token in fit_to_context(prefix, model.config.context_length)
+                ],
                 dtype=torch.long,
                 device=device,
-            )[-model.config.context_length :]
+            )
             logits, _ = model(input_ids.unsqueeze(0))
             next_logits = logits[0, -1].float()
             raw_probabilities = torch.softmax(next_logits, dim=-1)
@@ -341,6 +348,7 @@ def _generated_statistics(
         snapshots = _probability_snapshots(
             model,
             tokenizer,
+            all_tokens[:prompt_count],
             model_tokens,
             _snapshot_indices(diagnostics, len(model_tokens)),
             temperature=float(sample["temperature"]),
@@ -363,8 +371,7 @@ def _generated_statistics(
             }
         )
         print(
-            f"[{number}/{len(length_matched_samples)}] diagnosed seed "
-            f"{sample['seed']}",
+            f"[{number}/{len(length_matched_samples)}] diagnosed seed {sample['seed']}",
             flush=True,
         )
     return records

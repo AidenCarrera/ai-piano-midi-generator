@@ -7,7 +7,6 @@ import math
 import time
 from collections import Counter, defaultdict
 from collections.abc import Iterable
-from contextlib import nullcontext
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
@@ -26,6 +25,7 @@ from ai_piano_midi_generator.tokenizer import (
     PEDAL_UP_TOKEN,
     ExpressiveMidiTokenizer,
 )
+from ai_piano_midi_generator.training import amp_autocast
 
 TokenCategory = Literal[
     "note_on",
@@ -132,12 +132,6 @@ def invalid_prediction_tendencies(
     return dict(sorted(counts.items()))
 
 
-def _autocast(device: torch.device, enabled: bool):
-    if device.type == "cuda" and enabled:
-        return torch.autocast(device_type="cuda", dtype=torch.float16)
-    return nullcontext()
-
-
 @torch.inference_mode()
 def evaluate_test_model(
     model: PianoTransformer,
@@ -160,7 +154,7 @@ def evaluate_test_model(
     for inputs, targets in batches:
         inputs = inputs.to(device, non_blocking=True)
         targets = targets.to(device, non_blocking=True)
-        with _autocast(device, amp):
+        with amp_autocast(device, amp):
             logits, _ = model(inputs)
             loss_sum = F.cross_entropy(
                 logits.reshape(-1, logits.size(-1)),
@@ -331,84 +325,6 @@ def analyze_generation(
         "safeguard_interventions": list(sampled.safeguard_interventions),
         "midi_parse_valid": parse_valid,
         "parse_error": parse_error,
-    }
-
-
-def summarize_generation_group(
-    records: list[dict[str, object]],
-) -> dict[str, object]:
-    """Aggregate comparable generation statistics for one sampling setting."""
-    if not records:
-        raise ValueError("Cannot summarize an empty generation group")
-    blocked_totals: Counter[str] = Counter()
-    decoder_totals: Counter[str] = Counter()
-    finalization_totals: Counter[str] = Counter()
-    safeguard_totals: Counter[str] = Counter()
-    durations: list[float] = []
-    notes: list[int] = []
-    pedal_events: list[int] = []
-    generated_tokens: list[int] = []
-    valid_count = 0
-    safe_eos_count = 0
-    for record in records:
-        duration = record["duration_seconds"]
-        note_count = record["note_count"]
-        cc64_count = record["cc64_event_count"]
-        generated_count = record["model_generated_token_count"]
-        if not isinstance(duration, (int, float)):
-            raise ValueError("Generation duration_seconds must be numeric")
-        if not isinstance(note_count, int):
-            raise ValueError("Generation note_count must be an integer")
-        if not isinstance(cc64_count, int):
-            raise ValueError("Generation cc64_event_count must be an integer")
-        if not isinstance(generated_count, int):
-            raise ValueError(
-                "Generation model_generated_token_count must be an integer"
-            )
-        durations.append(float(duration))
-        notes.append(note_count)
-        pedal_events.append(cc64_count)
-        generated_tokens.append(generated_count)
-        valid_count += int(bool(record["midi_parse_valid"]))
-        safe_eos_count += int(bool(record["ended_with_safe_model_eos"]))
-        for field, destination in (
-            ("blocked_invalid_events", blocked_totals),
-            ("decoder_repairs", decoder_totals),
-            ("final_state_repairs", finalization_totals),
-        ):
-            value = record[field]
-            if not isinstance(value, dict):
-                raise ValueError(f"Generation record {field} is not an object")
-            destination.update({str(name): int(count) for name, count in value.items()})
-        safeguards = record.get("safeguard_interventions", [])
-        if not isinstance(safeguards, list):
-            raise ValueError("Generation safeguard_interventions must be a list")
-        for intervention in safeguards:
-            if not isinstance(intervention, dict):
-                raise ValueError("Generation safeguard intervention must be an object")
-            safeguard_totals[str(intervention.get("kind", "unknown"))] += 1
-    sample_count = len(records)
-    decoder_repair_count = decoder_totals["total"]
-    finalization_repair_count = sum(finalization_totals.values())
-    blocked_count = sum(blocked_totals.values())
-    return {
-        "sample_count": sample_count,
-        "valid_midi_count": valid_count,
-        "safe_model_eos_count": safe_eos_count,
-        "average_generated_token_count": sum(generated_tokens) / sample_count,
-        "average_duration_seconds": sum(durations) / sample_count,
-        "average_note_count": sum(notes) / sample_count,
-        "average_cc64_event_count": sum(pedal_events) / sample_count,
-        "average_decoder_repair_count": decoder_repair_count / sample_count,
-        "average_finalization_repair_count": (finalization_repair_count / sample_count),
-        "average_blocked_invalid_event_count": blocked_count / sample_count,
-        "average_safeguard_intervention_count": (
-            sum(safeguard_totals.values()) / sample_count
-        ),
-        "decoder_repair_totals": dict(sorted(decoder_totals.items())),
-        "final_state_repair_totals": dict(sorted(finalization_totals.items())),
-        "blocked_invalid_event_totals": dict(sorted(blocked_totals.items())),
-        "safeguard_intervention_totals": dict(sorted(safeguard_totals.items())),
     }
 
 

@@ -155,8 +155,9 @@ uv run python scripts/analyze_tokenization.py
 
 The default event vocabulary uses 10 ms time steps, time-shift tokens up to one
 second, 32 velocity bins, note-on and note-off tokens for all MIDI pitches, and
-binary CC64 pedal tokens. Tempo changes are converted to elapsed seconds rather
-than represented as tokens. Decoding writes a fixed 120 QPM representation for
+binary CC64 pedal tokens. CC64 values that do not change the binary pedal state
+emit no token, matching the sampler's grammar. Tempo changes are converted to
+elapsed seconds rather than represented as tokens. Decoding writes a fixed 120 QPM representation for
 round-trip validation only.
 
 Use `--timing-resolution`, `--maximum-time-shift`, `--velocity-bins`, and
@@ -185,7 +186,9 @@ Generated arrays are written under `data/processed/tokens`, with metadata in
 the preparation report analyzes the active 2,048-token chunk plan by default.
 Unsafe chunk starts receive explicit active-note and pedal-state reconstruction
 prefixes. Existing arrays are verified and reused when identical; pass
-`--overwrite` to replace differing generated arrays.
+`--overwrite` to replace differing generated arrays. Arrays written before
+redundant pedal events were dropped differ from current encoder output; rerun
+with `--overwrite` and retrain to train on the canonical representation.
 The preparation reports are written under `reports/tokenization/`.
 
 ## Train the decoder-only baseline
@@ -207,7 +210,10 @@ uv run python scripts/train.py --resume checkpoints/baseline_2048/latest.pt
 The active baseline uses a 2,048-token causal context, shifted next-token loss,
 AdamW, warmup plus cosine decay, gradient accumulation and clipping, CUDA AMP
 and fused AdamW when enabled and available, seeded random-number generators,
-token-weighted validation, and latest/best checkpoints. Strict deterministic
+token-weighted validation over the whole validation split (so losses do not
+depend on batch size), and latest/best checkpoints. Logged training and
+validation metrics are appended to `training_history.jsonl` beside the training
+report for learning-curve figures. Strict deterministic
 kernels are available through `training.deterministic` but are disabled in the
 performance-oriented baseline configuration. Set `training.compile_model` to
 `true` to compile the model in place with `dynamic=False`; `training.compile_mode`
@@ -262,8 +268,8 @@ Train the same architecture and 6,000-step schedule from scratch with
 EOS-ending excerpts mixed into 20% of training draws:
 
 ```powershell
-uv run python scripts/train_eos.py --smoke-test
-uv run python scripts/train_eos.py
+uv run python scripts/train.py --config configs/training_eos_2048.toml --smoke-test
+uv run python scripts/train.py --config configs/training_eos_2048.toml
 ```
 
 This run does not load baseline weights or alter the tokenizer, vocabulary,
@@ -282,9 +288,12 @@ uv run python scripts/generate.py --checkpoint checkpoints/baseline_2048/best.pt
 ```
 
 Sampling supports temperature, top-k, and top-p controls and blocks invalid
-note-off and pedal transitions. EOS remains eligible after the configured
-minimum; any active note or sustain state is closed by the exporter before
-decoding through the existing tokenizer.
+note-off and pedal transitions, including note-offs that would close a note in
+the step it started. EOS remains eligible after the configured minimum; any
+active note or sustain state is closed by the exporter before decoding through
+the existing tokenizer. Once a prompt plus generation exceeds the context, the
+model window is laid out like a training chunk: BOS, explicit held-note and
+pedal state, then the most recent tokens from an event boundary.
 
 Diagnose long-context time-shift behavior against length-matched train,
 validation, and test windows using the capped samples in the baseline natural-
@@ -349,8 +358,10 @@ model, or training pipeline:
 uv run python scripts/create_visualizations.py
 ```
 
-The command saves dataset preparation, tokenization, grouped split, available
-training-loss, and generated-versus-test figures under `reports/figures/`.
+The command saves dataset preparation, tokenization, grouped split, learning
+curve and test loss, generated-versus-test, and musical-statistics (pitch class,
+register, notes per onset) figures under `reports/figures/`. Runs trained before
+`training_history.jsonl` existed are shown as endpoints only.
 Missing optional experiment reports are skipped unless `--strict` is supplied.
 Use `--format svg` or `--format both` for vector output.
 

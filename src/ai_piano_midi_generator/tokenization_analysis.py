@@ -143,7 +143,7 @@ def _markdown(report: dict[str, object]) -> str:
         f"- Decoding repairs: **{repairs['total']}**",
         "- Non-binary source CC64 values mapped to pedal states: "
         f"**{pedal['non_binary_value_event_count']}**",
-        "- Redundant consecutive pedal-state events retained: "
+        "- Redundant consecutive pedal-state source events dropped: "
         f"**{pedal['redundant_same_state_event_count']}**",
         "- Files ending with pedal down: "
         f"**{pedal['files_ending_with_pedal_down_count']}**",
@@ -348,9 +348,8 @@ def analyze_tokenization(
         {
             "category": "Pedal event efficiency",
             "detail": (
-                f"{redundant_pedal_states} consecutive same-state pedal events are "
-                "retained for event fidelity; decide whether to canonicalize them "
-                "before training."
+                f"{redundant_pedal_states} consecutive same-state source CC64 "
+                "events carry no binary pedal change and are not tokenized."
             ),
         },
         {

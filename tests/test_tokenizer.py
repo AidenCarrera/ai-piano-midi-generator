@@ -99,6 +99,19 @@ def test_round_trip_preserves_chord_velocity_timing_and_sustain() -> None:
     assert max(encoded.diagnostics.velocity_errors) <= 2
 
 
+def test_redundant_cc64_values_do_not_emit_pedal_tokens() -> None:
+    score, track = base_score()
+    track.notes.append(Note(0, 960, 60, 64))
+    for time, value in ((0, 0), (0, 100), (240, 127), (480, 30), (720, 0)):
+        track.controls.append(ControlChange(time, 64, value))
+    tokenizer = ExpressiveMidiTokenizer()
+
+    tokens = tokenizer.encode(seconds_score(score)).tokens
+    pedal_tokens = [t for t in tokens if t in (PEDAL_DOWN_TOKEN, PEDAL_UP_TOKEN)]
+
+    assert pedal_tokens == [PEDAL_DOWN_TOKEN, PEDAL_UP_TOKEN]
+
+
 def test_round_trip_preserves_overlapping_and_repeated_pitches() -> None:
     score, track = base_score()
     track.notes.append(Note(0, 480, 60, 50))

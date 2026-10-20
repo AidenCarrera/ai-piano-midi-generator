@@ -284,11 +284,18 @@ class ExpressiveMidiTokenizer:
         current_step = 0
         current_event_step: int | None = None
         emitted_velocity_bin: int | None = None
+        pedal_down = False
         timing_errors: list[float] = []
         velocity_errors: list[int] = []
         event_counts: Counter[str] = Counter()
 
         for event in events:
+            if event.kind in ("pedal_down", "pedal_up"):
+                # Binary sustain: CC64 values that keep the state are not events.
+                # The sampler forbids these transitions, so training data must too.
+                if (event.kind == "pedal_down") == pedal_down:
+                    continue
+                pedal_down = event.kind == "pedal_down"
             if event.step != current_event_step:
                 delta = event.step - current_step
                 while delta > 0:

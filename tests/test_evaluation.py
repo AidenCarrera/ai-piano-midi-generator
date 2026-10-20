@@ -12,7 +12,6 @@ from ai_piano_midi_generator.evaluation import (
     TOKEN_CATEGORIES,
     evaluate_test_model,
     invalid_prediction_tendencies,
-    summarize_generation_group,
     token_category,
 )
 from ai_piano_midi_generator.model import PianoTransformer, TransformerConfig
@@ -137,6 +136,63 @@ class _AlwaysShiftModel(nn.Module):
         )
         logits[..., self.tokenizer.token_to_id["TIME_SHIFT_1"]] = 100.0
         return logits, None
+
+
+class _RecordingShiftModel(_AlwaysShiftModel):
+    def __init__(self, tokenizer: ExpressiveMidiTokenizer) -> None:
+        super().__init__(tokenizer)
+        self.inputs: list[tuple[str, ...]] = []
+
+    def forward(self, input_ids: torch.Tensor) -> tuple[torch.Tensor, None]:
+        self.inputs.append(self.tokenizer.ids_to_tokens(input_ids[0].cpu().numpy()))
+        return super().forward(input_ids)
+
+
+def test_long_generation_keeps_training_chunk_layout_in_model_window() -> None:
+    tokenizer = ExpressiveMidiTokenizer()
+    model = _RecordingShiftModel(tokenizer)
+    prompt = (BOS_TOKEN, PEDAL_DOWN_TOKEN, "VELOCITY_8", "NOTE_ON_60")
+
+    sample_tokens(
+        cast(PianoTransformer, model),
+        tokenizer,
+        prompt_tokens=prompt,
+        maximum_new_tokens=30,
+        top_k=1,
+        top_p=1.0,
+    )
+
+    assert len(model.inputs) == 30
+    assert all(len(window) <= 16 for window in model.inputs)
+    assert all(window[0] == BOS_TOKEN for window in model.inputs)
+    # Once the window slides, held note and pedal state are rebuilt explicitly.
+    assert model.inputs[-1][:4] == prompt
+    assert model.inputs[-1][4:] == ("TIME_SHIFT_1",) * 12
+
+
+class _PrefersNoteOffModel(_AlwaysShiftModel):
+    def forward(self, input_ids: torch.Tensor) -> tuple[torch.Tensor, None]:
+        logits, _ = super().forward(input_ids)
+        logits[..., self.tokenizer.token_to_id["NOTE_OFF_60"]] = 200.0
+        return logits, None
+
+
+def test_note_off_cannot_close_a_note_started_in_the_same_step() -> None:
+    tokenizer = ExpressiveMidiTokenizer()
+    model = cast(PianoTransformer, _PrefersNoteOffModel(tokenizer))
+
+    result = sample_tokens(
+        model,
+        tokenizer,
+        prompt_tokens=(BOS_TOKEN, "VELOCITY_8", "NOTE_ON_60"),
+        maximum_new_tokens=2,
+        top_k=1,
+        top_p=1.0,
+    )
+
+    assert result.tokens[3:5] == ("TIME_SHIFT_1", "NOTE_OFF_60")
+    assert result.invalid_events_blocked == {"zero_duration_note_off": 1}
+    assert tokenizer.decode(result.tokens).repairs.total == 0
 
 
 def test_minimum_generation_length_blocks_early_eos() -> None:
@@ -339,41 +395,3 @@ def test_endurance_mode_rejects_safeguards() -> None:
             generation_mode="endurance",
             maximum_duration_seconds=10.0,
         )
-
-
-def test_generation_group_summary_averages_metrics_and_nested_counts() -> None:
-    records: list[dict[str, object]] = [
-        {
-            "duration_seconds": 10.0,
-            "note_count": 20,
-            "cc64_event_count": 4,
-            "model_generated_token_count": 100,
-            "midi_parse_valid": True,
-            "ended_with_safe_model_eos": False,
-            "blocked_invalid_events": {"orphan_note_off": 2},
-            "decoder_repairs": {"total": 0},
-            "final_state_repairs": {"appended_eos": 1},
-        },
-        {
-            "duration_seconds": 20.0,
-            "note_count": 40,
-            "cc64_event_count": 6,
-            "model_generated_token_count": 80,
-            "midi_parse_valid": True,
-            "ended_with_safe_model_eos": True,
-            "blocked_invalid_events": {"orphan_note_off": 1},
-            "decoder_repairs": {"total": 2},
-            "final_state_repairs": {},
-        },
-    ]
-
-    summary = summarize_generation_group(records)
-
-    assert summary["average_duration_seconds"] == 15.0
-    assert summary["average_note_count"] == 30.0
-    assert summary["average_cc64_event_count"] == 5.0
-    assert summary["average_generated_token_count"] == 90.0
-    assert summary["average_decoder_repair_count"] == 1.0
-    assert summary["average_finalization_repair_count"] == 0.5
-    assert summary["average_blocked_invalid_event_count"] == 1.5
-    assert summary["safe_model_eos_count"] == 1

@@ -422,6 +422,29 @@ def plan_state_safe_chunks(
     )
 
 
+def fit_to_context(tokens: Sequence[str], context_length: int) -> tuple[str, ...]:
+    """Fit a long sequence into one model window laid out like a training chunk.
+
+    Training chunks always begin with BOS plus explicit active-note and pedal
+    state, so a plain sliding window (no BOS, lost held notes) is out of
+    distribution. Keep the longest suffix that fits behind that state prefix,
+    preferring event boundaries as chunk planning does.
+    """
+    if len(tokens) <= context_length:
+        return tuple(tokens)
+    states = _token_states(tokens)
+    starts = range(len(tokens) - context_length + 1, len(tokens))
+    boundaries = [start for start in starts if tokens[start].startswith("TIME_SHIFT_")]
+    for start in (*boundaries, *starts):
+        at_event_boundary = tokens[start].startswith("TIME_SHIFT_")
+        reconstruction = _state_reconstruction_tokens(
+            states[start], include_velocity_state=not at_event_boundary
+        )
+        if len(reconstruction) + len(tokens) - start <= context_length:
+            return (*reconstruction, *tokens[start:])
+    raise ValueError("State reconstruction is larger than the requested context length")
+
+
 def plan_tail_excerpts(
     tokens: Sequence[str],
     excerpt_lengths: Sequence[int],

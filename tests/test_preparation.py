@@ -12,6 +12,7 @@ from ai_piano_midi_generator.data.preparation import (
     assign_tune_groups,
     automatic_tune_group,
     deterministic_group_splits,
+    fit_to_context,
     plan_state_safe_chunks,
     plan_tail_excerpts,
     prepare_tokenized_dataset,
@@ -104,6 +105,34 @@ def test_chunk_planning_reconstructs_held_note_and_pedal_state() -> None:
     )
     assert all(plan.model_token_count <= 8 for plan in plans)
     assert all(not plan.forced_inside_event_group for plan in plans)
+
+
+def test_fit_to_context_matches_reconstructed_chunk_layout() -> None:
+    tokens = (
+        BOS_TOKEN,
+        PEDAL_DOWN_TOKEN,
+        "VELOCITY_8",
+        "NOTE_ON_60",
+        "TIME_SHIFT_10",
+        "VELOCITY_9",
+        "NOTE_ON_64",
+        "TIME_SHIFT_10",
+        "NOTE_OFF_64",
+        "TIME_SHIFT_10",
+    )
+
+    assert fit_to_context(tokens, context_length=10) == tokens
+    assert fit_to_context(tokens, context_length=9) == (
+        BOS_TOKEN,
+        PEDAL_DOWN_TOKEN,
+        "VELOCITY_8",
+        "NOTE_ON_60",
+        "VELOCITY_9",
+        "NOTE_ON_64",
+        "TIME_SHIFT_10",
+        "NOTE_OFF_64",
+        "TIME_SHIFT_10",
+    )
 
 
 def test_chunk_planning_prefers_safe_boundary_when_available() -> None:

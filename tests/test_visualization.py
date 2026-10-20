@@ -6,9 +6,11 @@ import json
 from pathlib import Path
 
 import matplotlib
+import numpy as np
 
 matplotlib.use("Agg")
 
+from ai_piano_midi_generator.tokenizer import ExpressiveMidiTokenizer
 from ai_piano_midi_generator.visualization import (
     generate_project_figures,
     training_loss_figure,
@@ -68,16 +70,47 @@ def test_generate_project_figures_from_existing_report_shapes(tmp_path: Path) ->
         tmp_path / "reports/tokenization/dataset_preparation.json",
         {
             "settings": {
+                "context_lengths": [2048],
                 "target_split_ratios": {"train": 0.8, "validation": 0.1, "test": 0.1},
             },
+            "group_leakage_free": True,
             "split_balance": split_balance,
         },
     )
+    tokenizer = ExpressiveMidiTokenizer()
+    performance = tokenizer.tokens_to_ids(
+        [
+            "BOS",
+            "VELOCITY_8",
+            "NOTE_ON_60",
+            "NOTE_ON_64",
+            "TIME_SHIFT_10",
+            "NOTE_OFF_60",
+            "NOTE_OFF_64",
+            "VELOCITY_9",
+            "NOTE_ON_67",
+            "TIME_SHIFT_5",
+            "NOTE_OFF_67",
+            "EOS",
+        ]
+    )
+    token_path = tmp_path / "tokens/performance.npy"
+    token_path.parent.mkdir(parents=True)
+    np.save(token_path, performance)
     manifest_path = tmp_path / "data/manifests/tokenized_dataset.jsonl"
     manifest_path.parent.mkdir(parents=True)
     manifest_path.write_text(
-        "\n".join(json.dumps({"token_count": count}) for count in (1800, 2800, 3600))
-        + "\n",
+        "".join(
+            json.dumps(
+                {
+                    "token_count": count,
+                    "split": split,
+                    "token_array_path": "tokens/performance.npy",
+                }
+            )
+            + "\n"
+            for count, split in ((1800, "train"), (2800, "validation"), (3600, "test"))
+        ),
         encoding="utf-8",
     )
     _write_json(
@@ -109,6 +142,9 @@ def test_generate_project_figures_from_existing_report_shapes(tmp_path: Path) ->
                     "time_shift_token_percentage": 36.0 + offset,
                     "maximum_silence_seconds": 2.0 + offset,
                     "degeneracy_classification": {"is_degenerate": offset > 0.0},
+                    "token_array_path": "tokens/performance.npy",
+                    "prompt_token_count": 1,
+                    "model_generated_token_count": 10,
                 }
             )
     _write_json(
@@ -146,40 +182,51 @@ def test_generate_project_figures_from_existing_report_shapes(tmp_path: Path) ->
         "split_balance.png",
         "training_loss.png",
         "generated_vs_test.png",
+        "musical_statistics.png",
     }
     assert all(path.stat().st_size > 1_000 for path in result.generated_files)
     manifest = json.loads((output_directory / "manifest.json").read_text())
     assert manifest["skipped_plots"] == []
-    assert len(manifest["generated_files"]) == 5
+    assert len(manifest["generated_files"]) == 6
 
 
-def test_training_loss_figure_includes_nonbaseline_training_runs(
+def test_training_loss_figure_draws_curves_only_from_logged_history(
     tmp_path: Path,
 ) -> None:
     report = {
-        "steps": 6_000,
+        "steps": 20,
         "initial_loss": 6.0,
         "final_training_loss": 2.2,
         "best_validation_loss": 2.5,
         "final_validation_loss": 2.6,
     }
     _write_json(tmp_path / "reports/baseline_2048/training.json", report)
+    (tmp_path / "reports/baseline_2048/training_history.jsonl").write_text(
+        "".join(
+            json.dumps(row) + "\n"
+            for step in (10, 20)
+            for row in (
+                {"step": step, "training_loss": 3.0 - step / 20},
+                {"step": step, "validation_loss": 3.1 - step / 20},
+            )
+        ),
+        encoding="utf-8",
+    )
     _write_json(
         tmp_path / "reports/eos_2048/training.json",
-        {
-            **report,
-            "initial_loss": None,
-            "final_training_loss": 2.1,
-            "best_validation_loss": 2.4,
-            "final_validation_loss": 2.5,
-        },
+        {**report, "initial_loss": None, "final_validation_loss": 2.5},
     )
 
     figure = training_loss_figure(tmp_path)
 
-    endpoint_labels = {
-        text.get_text() for text in figure.axes[0].get_legend().get_texts()
+    legend = {text.get_text() for text in figure.axes[0].get_legend().get_texts()}
+    assert legend == {
+        "baseline_2048",
+        "eos_2048 (endpoints only)",
+        "training",
+        "validation",
     }
-    validation_labels = {tick.get_text() for tick in figure.axes[1].get_xticklabels()}
-    assert endpoint_labels == {"baseline_2048", "eos_2048"}
-    assert validation_labels == {"baseline_2048", "eos_2048"}
+    validation_curve = [
+        line for line in figure.axes[0].get_lines() if len(line.get_xdata()) == 3
+    ]
+    assert [list(line.get_xdata()) for line in validation_curve] == [[0.0, 10, 20]]

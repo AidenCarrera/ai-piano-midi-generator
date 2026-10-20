@@ -12,7 +12,7 @@ from typing import Literal, cast
 import numpy as np
 from symusic.core import ScoreTick
 
-from ai_piano_midi_generator.sampling import sample_tokens
+from ai_piano_midi_generator.sampling import sample_tokens, sanitize_prompt_tokens
 from ai_piano_midi_generator.tokenizer import BOS_TOKEN, ExpressiveMidiTokenizer
 from ai_piano_midi_generator.training import load_model_checkpoint, select_device
 
@@ -144,8 +144,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         ]
     else:
         prompt_tokens = (BOS_TOKEN,)
-    if not prompt_tokens or prompt_tokens[0] != BOS_TOKEN:
-        prompt_tokens = (BOS_TOKEN, *prompt_tokens)
+    prompt_tokens, prompt_repairs = sanitize_prompt_tokens(prompt_tokens, tokenizer)
 
     sampled = sample_tokens(
         model,
@@ -185,6 +184,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             args.token_output.as_posix() if args.token_output is not None else None
         ),
         "prompt_token_count": len(prompt_tokens),
+        "prompt_state_repairs": prompt_repairs,
         "generated_total_token_count": len(sampled.tokens),
         "model_generated_token_count": sampled.model_generated_token_count,
         "model_eos_token_position": sampled.model_eos_token_position,

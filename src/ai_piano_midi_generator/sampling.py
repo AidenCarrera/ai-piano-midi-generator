@@ -9,6 +9,7 @@ from typing import Literal
 
 import torch
 
+from ai_piano_midi_generator.data.preparation import fit_to_context
 from ai_piano_midi_generator.model import PianoTransformer
 from ai_piano_midi_generator.tokenizer import (
     BOS_TOKEN,
@@ -120,6 +121,16 @@ def _advance_state(state: _GenerationState, token: str, invalid: Counter[str]) -
         state.ended = True
 
 
+def _zero_duration_note_off(state: _GenerationState, pitch: int) -> bool:
+    """Whether NOTE_OFF would close (FIFO) a note started at the current step.
+
+    The encoder orders note-offs before note-ons within a step, so training data
+    never contains this; the decoder would have to repair it.
+    """
+    starts = state.note_start_steps.get(pitch)
+    return bool(starts) and starts[0] >= state.elapsed_steps
+
+
 def _constraint_mask(
     tokenizer: ExpressiveMidiTokenizer,
     state: _GenerationState,
@@ -133,7 +144,9 @@ def _constraint_mask(
         for pitch in range(128):
             allowed[tokenizer.token_to_id[f"NOTE_ON_{pitch}"]] = False
     for pitch in range(128):
-        if state.active_notes.get(pitch, 0) <= 0:
+        if state.active_notes.get(pitch, 0) <= 0 or _zero_duration_note_off(
+            state, pitch
+        ):
             allowed[tokenizer.token_to_id[f"NOTE_OFF_{pitch}"]] = False
     if state.pedal_down:
         allowed[tokenizer.token_to_id[PEDAL_DOWN_TOKEN]] = False
@@ -156,6 +169,8 @@ def _blocked_reasons(
         pitch = int(token.removeprefix("NOTE_OFF_"))
         if state.active_notes.get(pitch, 0) <= 0:
             reasons.append("orphan_note_off")
+        elif _zero_duration_note_off(state, pitch):
+            reasons.append("zero_duration_note_off")
     elif token == PEDAL_DOWN_TOKEN and state.pedal_down:
         reasons.append("duplicate_pedal_down")
     elif token == PEDAL_UP_TOKEN and not state.pedal_down:
@@ -348,11 +363,16 @@ def sample_tokens(
     for generated_index in range(maximum_new_tokens):
         if state.ended:
             break
+        # ponytail: no KV cache and an O(n) state rebuild per token once the window
+        # slides; add incremental state + KV caching if long generation gets slow.
         ids = torch.tensor(
-            [tokenizer.token_to_id[token] for token in generated],
+            [
+                tokenizer.token_to_id[token]
+                for token in fit_to_context(generated, model.config.context_length)
+            ],
             dtype=torch.long,
             device=device,
-        )[-model.config.context_length :]
+        )
         logits, _ = model(ids.unsqueeze(0))
         next_logits = logits[0, -1].float()
         if constrain_states:

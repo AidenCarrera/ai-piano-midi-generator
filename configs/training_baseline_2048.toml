@@ -21,7 +21,6 @@ warmup_steps = 250
 weight_decay = 0.10
 gradient_clip_norm = 1.0
 evaluation_interval = 125
-evaluation_batches = 40
 checkpoint_interval = 250
 log_interval = 10
 seed = 2026

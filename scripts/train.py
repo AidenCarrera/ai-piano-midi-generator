@@ -166,7 +166,6 @@ def main(argv: Sequence[str] | None = None) -> int:
             maximum_steps=2,
             warmup_steps=0,
             evaluation_interval=1,
-            evaluation_batches=1,
             checkpoint_interval=1,
             log_interval=1,
         )
@@ -182,7 +181,6 @@ def main(argv: Sequence[str] | None = None) -> int:
             minimum_learning_rate=1e-4,
             warmup_steps=min(5, max(0, args.overfit_steps - 1)),
             evaluation_interval=max(1, args.overfit_steps // 6),
-            evaluation_batches=args.overfit_chunks,
             checkpoint_interval=args.overfit_steps,
             log_interval=max(1, args.overfit_steps // 12),
         )
@@ -229,11 +227,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         None
         if args.resume is not None
         else evaluate_loss(
-            model,
-            validation_loader,
-            device=device,
-            maximum_batches=training_config.evaluation_batches,
-            amp=training_config.amp,
+            model, validation_loader, device=device, amp=training_config.amp
         )
     )
 
@@ -266,6 +260,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         checkpoint_directory=checkpoint_directory,
         resume_path=args.resume,
         maximum_steps=step_limit,
+        history_path=report_path.with_name(f"{report_path.stem}_history.jsonl"),
     )
     if temporary_checkpoints is not None:
         temporary_checkpoints.cleanup()

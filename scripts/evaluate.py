@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
-from collections import Counter, defaultdict
+from collections import Counter
 from collections.abc import Sequence
 from functools import partial
 from pathlib import Path
@@ -23,13 +23,8 @@ from ai_piano_midi_generator.evaluation import (
     write_json_report,
     write_markdown_report,
 )
-from ai_piano_midi_generator.tokenizer import (
-    BOS_TOKEN,
-    EOS_TOKEN,
-    PEDAL_DOWN_TOKEN,
-    PEDAL_UP_TOKEN,
-    ExpressiveMidiTokenizer,
-)
+from ai_piano_midi_generator.sampling import sanitize_prompt_tokens
+from ai_piano_midi_generator.tokenizer import BOS_TOKEN, ExpressiveMidiTokenizer
 from ai_piano_midi_generator.training import load_model_checkpoint, select_device
 
 
@@ -90,44 +85,6 @@ def _test_rows(path: Path) -> list[dict[str, object]]:
     return sorted(rows, key=lambda row: str(row.get("source_file", "")))
 
 
-def _safe_prompt_prefix(
-    tokens: tuple[str, ...], maximum_length: int
-) -> tuple[str, ...]:
-    active_notes: dict[int, int] = defaultdict(int)
-    pedal_down = False
-    velocity_selected = False
-    prefix: list[str] = []
-    for token in tokens[:maximum_length]:
-        invalid = False
-        if token == EOS_TOKEN:
-            break
-        if token.startswith("VELOCITY_"):
-            velocity_selected = True
-        elif token.startswith("NOTE_ON_"):
-            if not velocity_selected:
-                invalid = True
-            pitch = int(token.removeprefix("NOTE_ON_"))
-            active_notes[pitch] += 1
-        elif token.startswith("NOTE_OFF_"):
-            pitch = int(token.removeprefix("NOTE_OFF_"))
-            if active_notes[pitch] <= 0:
-                invalid = True
-            else:
-                active_notes[pitch] -= 1
-        elif token == PEDAL_DOWN_TOKEN:
-            invalid = pedal_down
-            pedal_down = True
-        elif token == PEDAL_UP_TOKEN:
-            invalid = not pedal_down
-            pedal_down = False
-        if invalid:
-            break
-        prefix.append(token)
-    if not prefix or prefix[0] != BOS_TOKEN:
-        prefix.insert(0, BOS_TOKEN)
-    return tuple(prefix)
-
-
 def _prompt_candidates(
     rows: list[dict[str, object]],
     tokenizer: ExpressiveMidiTokenizer,
@@ -140,7 +97,8 @@ def _prompt_candidates(
         if not isinstance(source_file, str) or not isinstance(source_path, str):
             raise ValueError("Test manifest row is missing source paths")
         tokens = tokenizer.encode_file(Path(source_path)).tokens
-        candidates.append((source_file, _safe_prompt_prefix(tokens, prompt_length)))
+        prompt, _ = sanitize_prompt_tokens(tokens[:prompt_length], tokenizer)
+        candidates.append((source_file, prompt))
     candidates.sort(key=lambda item: (-len(item[1]), item[0].casefold()))
     return candidates
 

@@ -39,7 +39,6 @@ class TrainingConfig:
     weight_decay: float = 0.1
     gradient_clip_norm: float = 1.0
     evaluation_interval: int = 250
-    evaluation_batches: int = 40
     checkpoint_interval: int = 500
     log_interval: int = 10
     seed: int = 2026
@@ -56,7 +55,6 @@ class TrainingConfig:
             self.gradient_accumulation_steps,
             self.maximum_steps,
             self.evaluation_interval,
-            self.evaluation_batches,
             self.checkpoint_interval,
             self.log_interval,
         )
@@ -149,7 +147,8 @@ def build_optimizer(model: nn.Module, config: TrainingConfig) -> torch.optim.Ada
     )
 
 
-def _autocast(device: torch.device, enabled: bool):
+def amp_autocast(device: torch.device, enabled: bool):
+    """Return float16 CUDA autocast when enabled, otherwise a no-op context."""
     if device.type == "cuda" and enabled:
         return torch.autocast(device_type="cuda", dtype=torch.float16)
     return nullcontext()
@@ -167,26 +166,25 @@ def evaluate_loss(
     batches: Iterable[tuple[torch.Tensor, torch.Tensor]],
     *,
     device: torch.device,
-    maximum_batches: int,
     amp: bool,
 ) -> float:
-    """Evaluate mean next-token loss over a bounded number of batches."""
-    if maximum_batches <= 0:
-        raise ValueError("maximum_batches must be positive")
+    """Evaluate token-weighted mean next-token loss over every batch.
+
+    The whole split is always measured so the number does not depend on the
+    batch size (a batch-count cap once made runs incomparable).
+    """
     was_training = model.training
     model.eval()
     total_loss = 0.0
     evaluated_tokens = 0
     try:
-        for batch_index, (inputs, targets) in enumerate(batches):
-            if batch_index >= maximum_batches:
-                break
+        for inputs, targets in batches:
             inputs = inputs.to(device, non_blocking=True)
             targets = targets.to(device, non_blocking=True)
             token_count = int((targets != -100).sum().item())
             if token_count == 0:
                 continue
-            with _autocast(device, amp):
+            with amp_autocast(device, amp):
                 _, loss = model(inputs, targets)
             assert loss is not None
             total_loss += float(loss.detach().cpu()) * token_count
@@ -314,8 +312,25 @@ def train_model(
     checkpoint_directory: Path,
     resume_path: Path | None = None,
     maximum_steps: int | None = None,
+    history_path: Path | None = None,
 ) -> dict[str, float | int | str]:
-    """Train, validate, checkpoint, and report baseline language-model metrics."""
+    """Train, validate, checkpoint, and report baseline language-model metrics.
+
+    Logged metrics are printed and, with ``history_path``, appended as JSON
+    lines (truncated on a fresh run, extended on resume) for learning curves.
+    """
+    if history_path is not None:
+        history_path.parent.mkdir(parents=True, exist_ok=True)
+        if resume_path is None:
+            history_path.write_text("", encoding="utf-8")
+
+    def log(metrics: dict[str, float | int]) -> None:
+        line = json.dumps(metrics, sort_keys=True)
+        print(line, flush=True)
+        if history_path is not None:
+            with history_path.open("a", encoding="utf-8") as stream:
+                stream.write(line + "\n")
+
     set_random_seed(training_config.seed)
     configure_determinism(training_config.deterministic)
     model.to(device)
@@ -376,7 +391,7 @@ def train_model(
             inputs = inputs.to(device, non_blocking=True)
             targets = targets.to(device, non_blocking=True)
             step_tokens.add_((targets != -100).sum())
-            with _autocast(device, amp_enabled):
+            with amp_autocast(device, amp_enabled):
                 _, loss = model(inputs, targets)
                 assert loss is not None
                 scaled_loss = loss / training_config.gradient_accumulation_steps
@@ -418,7 +433,7 @@ def train_model(
                     else 0.0
                 ),
             }
-            print(json.dumps(metrics, sort_keys=True), flush=True)
+            log(metrics)
             running_loss.zero_()
             running_tokens.zero_()
             interval_start = time.perf_counter()
@@ -429,18 +444,15 @@ def train_model(
         )
         if should_evaluate:
             last_validation_loss = evaluate_loss(
-                model,
-                validation_loader,
-                device=device,
-                maximum_batches=training_config.evaluation_batches,
-                amp=amp_enabled,
+                model, validation_loader, device=device, amp=amp_enabled
             )
-            validation_metrics = {
-                "step": completed_step,
-                "validation_loss": last_validation_loss,
-                "validation_perplexity": math.exp(min(20.0, last_validation_loss)),
-            }
-            print(json.dumps(validation_metrics, sort_keys=True), flush=True)
+            log(
+                {
+                    "step": completed_step,
+                    "validation_loss": last_validation_loss,
+                    "validation_perplexity": math.exp(min(20.0, last_validation_loss)),
+                }
+            )
             if last_validation_loss < best_validation_loss:
                 best_validation_loss = last_validation_loss
                 save_checkpoint(
